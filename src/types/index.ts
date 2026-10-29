@@ -2,6 +2,8 @@ export interface User {
   id: number
   name: string
   email: string
+  role?: string | null
+  barangay?: string | null
   createdAt: string
   updatedAt: string
 }

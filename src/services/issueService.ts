@@ -1,54 +1,58 @@
-import type {
-  AddAttachmentPayload,
-  AddCommentPayload,
-  AssignStaffPayload,
-  CreateIssueTicketParams,
-  Issue,
-  UpdateStatusPayload,
-} from '@/types'
+
 import axios from 'axios'
 
-export const getIssues = async (): Promise<Issue> => {
-  const { data } = await axios.get<Issue>('api/issues')
-  return data
+export interface Issue {
+  uuid: string
+  title: string
+  description: string
+  status: 'pending' | 'in_progress' | 'resolved'
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  created_at: string
+  updated_at: string
+  category?: {
+    id: number
+    name: string
+  } | null
+  barangay?: {
+    id: number
+    name: string
+  } | null
 }
 
-export const createIssue = async (details: CreateIssueTicketParams): Promise<Issue> => {
-  const { data } = await axios.post<Issue>('/api/issues', {
-    title: details.title,
-    description: details.description,
-    issue_category_id: details.issueCategoryId,
-    barangay_id: details.barangayId,
-    priority: details.priority,
-    latitude: details.latitude,
-    longitude: details.longitude,
-  })
-  return data
+export interface PaginatedIssues {
+  data: Issue[]
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
 }
 
-export const getIssue = async (uuid: string): Promise<Issue> => {
-  const { data } = await axios.get<Issue>(`/api/issues/${uuid}`)
-  return data
-}
+export const issueService = {
+  async getIssues(page = 1): Promise<PaginatedIssues> {
+    const response = await axios.get('/api/issues', {
+      params: { page },
+    })
 
-export const updateIssue = async (uuid: string, issue: Partial<Issue>): Promise<void> => {
-  await axios.patch(`/api/issues/${uuid}`, issue)
-}
+    return response.data
+  },
 
-export const assignStaff = async (uuid: string, staff: AssignStaffPayload): Promise<void> => {
-  await axios.patch<void>(`/api/issues/${uuid}/assign`, {
-    assigned_to: staff.id,
-  })
-}
+  async getIssue(uuid: string): Promise<Issue> {
+    const response = await axios.get(`/api/issues/${uuid}`)
 
-export const updateIssueStatus = async (uuid: string, status: UpdateStatusPayload) => {
-  await axios.patch(`/api/issues/${uuid}/status`, status)
-}
+    return response.data.data
+  },
 
-export const addComment = async (uuid: string, comment: AddCommentPayload): Promise<void> => {
-  await axios.post<void>(`/api/issues/${uuid}/comments`, comment)
-}
+  async createIssue(payload: {
+    title: string
+    description: string
+    issue_category_id: number
+    barangay_id?: number | null
+    priority?: 'low' | 'medium' | 'high' | 'urgent'
+    latitude?: number | null
+    longitude?: number | null
+  }): Promise<Issue> {
+    const response = await axios.post('/api/issues', payload)
 
-export const addAttachment = async (uuid: string, attachment: AddAttachmentPayload): Promise<void> => {
-  await axios.post<void>(`/api/issues/${uuid}/attachments`, attachment)
+    return response.data.data
+  },
 }
