@@ -318,4 +318,3 @@ const handleLogin = async () => {
         </div>
     </main>
 </template>
-```

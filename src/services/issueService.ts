@@ -1,11 +1,10 @@
-
 import axios from 'axios'
 
 export interface Issue {
   uuid: string
   title: string
   description: string
-  status: 'pending' | 'in_progress' | 'resolved'
+  status: 'pending' | 'in_progress' | 'resolved' | 'rejected'
   priority: 'low' | 'medium' | 'high' | 'urgent'
   created_at: string
   updated_at: string

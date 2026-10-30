@@ -3,7 +3,6 @@ import {
   loginUser,
   logoutUser,
   registerUser,
-  testUser,
 } from '@/services/authService'
 import type { LoginParams, RegisterParams, User } from '@/types'
 import { defineStore } from 'pinia'
@@ -64,14 +63,6 @@ export const useAuthStore = defineStore('auth', () => {
       .finally(() => (isLoggingOutLoading.value = false))
   }
 
-  const test = async () => {
-    try {
-      await testUser()
-    } catch (err) {
-      console.log(err, 'Error')
-    }
-  }
-
   return {
     user,
     isAuthenticated,
@@ -83,6 +74,5 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     login,
     logout,
-    test,
   }
 })

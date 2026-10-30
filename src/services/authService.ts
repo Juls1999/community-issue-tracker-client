@@ -22,8 +22,3 @@ export const loginUser = async (credentials: LoginParams): Promise<void> => {
 export const logoutUser = async (): Promise<void> => {
   await axios.post<void>('/logout')
 }
-
-export const testUser = async () => {
-  const { data } = await axios.get('api/test')
-  return data
-}

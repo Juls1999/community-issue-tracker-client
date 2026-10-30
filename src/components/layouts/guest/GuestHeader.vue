@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink } from 'vue-router'
 
 const menuOpen = ref(false)
-const route = useRoute()
 
-const isActive = (path: string) => route.path === path
 </script>
 
 <template>
@@ -34,18 +32,21 @@ const isActive = (path: string) => route.path === path
 
             <!-- Desktop navigation -->
             <div class="hidden items-center gap-7 md:flex">
-                <RouterLink to="/" class="text-sm font-medium transition hover:text-brand-dark"
-                    :class="isActive('/') ? 'text-brand-dark' : 'text-text-body'">
+                <RouterLink to="/" class="text-sm font-medium text-text-body transition hover:text-brand-dark"
+                    exact-active-class="text-brand-dark!">
                     Home
                 </RouterLink>
 
-                <a href="/#how-it-works" class="text-sm font-medium text-text-body transition hover:text-brand-dark">
+                <RouterLink :to="{ name: 'how-it-works' }"
+                    class="text-sm font-medium text-text-body transition hover:text-brand-dark"
+                    active-class="text-brand-dark!">
                     How It Works
-                </a>
+                </RouterLink>
 
                 <div class="ml-2 flex items-center gap-3">
-                    <RouterLink to="/signin"
-                        class="rounded-xl px-4 py-2.5 text-sm font-semibold text-text-heading transition hover:bg-brand/10">
+                    <RouterLink :to="{ name: 'login' }"
+                        class="rounded-xl px-4 py-2.5 text-sm font-semibold text-text-heading transition hover:bg-brand/10"
+                        active-class="text-brand-dark!">
                         Sign In
                     </RouterLink>
 

@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/authStore'
 
 import GuestLayout from '@/layouts/GuestLayout.vue'
 import AuthenticatedLayout from '@/layouts/AuthenticatedLayout.vue'
+import type { Role } from '@/types'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -12,6 +13,7 @@ const router = createRouter({
     {
       path: '/',
       component: GuestLayout,
+      meta: { guest: true },
       children: [
         {
           path: '',
@@ -21,14 +23,22 @@ const router = createRouter({
         {
           path: 'about',
           name: 'about',
-          meta: { guest: true },
           component: () => import('@/views/AboutView.vue'),
         },
         {
           path: 'login',
           name: 'login',
-          meta: { guest: true },
           component: () => import('@/views/auth/LoginView.vue'),
+        },
+        {
+          path: 'register',
+          name: 'register',
+          component: () => import('@/views/auth/RegisterView.vue'),
+        },
+        {
+          path: '/how-it-works',
+          name: 'how-it-works',
+          component: () => import('@/views/HowItWorksView.vue'),
         },
       ],
     },
@@ -67,24 +77,55 @@ const router = createRouter({
   ],
 })
 
+function getDashboardRoute(role: string | null | undefined) {
+  switch (role) {
+    case 'resident':
+      return { name: 'resident-dashboard' }
+
+    case 'staff':
+      return { name: 'staff-dashboard' }
+
+    default:
+      return { name: 'home' }
+  }
+}
+
 router.beforeEach((to) => {
   const authStore = useAuthStore()
+  const isAuthenticated = authStore.isAuthenticated
+  const role = authStore.user?.role?.name
 
-  // Protected routes require authentication
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+  // Redirect authenticated users away from guest-only pages
+  if (to.meta.guest && isAuthenticated) {
+    const dashboard = getDashboardRoute(role)
+
+    // Avoid redirecting to the same route
+    if (to.name !== dashboard.name) {
+      return dashboard
+    }
+  }
+
+  // Require authentication for protected pages
+  if (to.meta.requiresAuth && !isAuthenticated) {
+    if (to.name === 'login') {
+      return true
+    }
+
     return {
       name: 'login',
       query: { redirect: to.fullPath },
     }
   }
 
-  // Guest-only routes are unavailable to authenticated users
-  if (to.meta.guest && authStore.isAuthenticated) {
-    return { name: 'home' }
-  }
+  // Check role-based access
+  if (to.meta.role && role !== to.meta.role) {
+    const dashboard = getDashboardRoute(role)
 
-  // Check the user's role when the route requires one
-  if (to.meta.role && authStore.user?.role !== to.meta.role) {
+    // Avoid redirect loops
+    if (to.name !== dashboard.name) {
+      return dashboard
+    }
+
     return { name: 'home' }
   }
 

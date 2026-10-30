@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AuthFooter from '@/components/layouts/authenticated/AuthFooter.vue'
 import AppBreadcrumb from '@/components/layouts/authenticated/AppBreadcrumb.vue'
+import ConfirmSignOutModal from '@/layouts/ConfirmSignOutModal.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -22,6 +23,26 @@ const navigation = [
     },
 
 ]
+
+const showSignOutModal = ref(false)
+const signingOut = ref(false)
+
+async function confirmSignOut() {
+    if (signingOut.value) return
+
+    signingOut.value = true
+
+    try {
+        // Call your existing logout function here.
+        await authStore.logout()
+
+        await router.push({ name: 'login' })
+    } catch (error) {
+        console.error('Unable to sign out:', error)
+    } finally {
+        signingOut.value = false
+    }
+}
 
 async function handleLogout() {
     await authStore.logout()
@@ -44,7 +65,7 @@ async function handleLogout() {
             :class="isSidebarOpen ? 'translate-x-0' : '-translate-x-full'">
             <!-- Brand -->
             <div class="flex h-20 items-center justify-between border-b border-border-subtle px-6">
-                <RouterLink to="/" class="flex items-center gap-3" @click="isSidebarOpen = false">
+                <RouterLink :to="{ name: 'home' }" class="flex items-center gap-3" @click="isSidebarOpen = false">
                     <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-brand-foreground">
                         <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2">
                             <path
@@ -127,24 +148,19 @@ async function handleLogout() {
 
             <!-- Bottom actions -->
             <div class="border-t border-border-subtle p-4">
-                <RouterLink to="/"
-                    class="mb-2 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-body transition-colors hover:bg-bg-page"
-                    @click="isSidebarOpen = false">
-                    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1Z" />
-                    </svg>
-                    Visit Homepage
-                </RouterLink>
 
                 <button type="button"
                     class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                    @click="handleLogout">
+                    @click="showSignOutModal = true">
                     <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                         <path d="m16 17 5-5-5-5M21 12H9" />
                     </svg>
                     Sign Out
                 </button>
+
+                <ConfirmSignOutModal :open="showSignOutModal" :loading="signingOut" @confirm="confirmSignOut"
+                    @cancel="showSignOutModal = false" />
             </div>
         </aside>
 

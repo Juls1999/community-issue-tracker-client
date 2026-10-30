@@ -2,10 +2,15 @@ export interface User {
   id: number
   name: string
   email: string
-  role?: string | null
-  barangay?: string | null
+  role?: Role | null
+  barangay?: Barangay | null
   createdAt: string
   updatedAt: string
+}
+
+export interface Role {
+  id: number
+  name: string
 }
 
 export interface RegisterParams {
