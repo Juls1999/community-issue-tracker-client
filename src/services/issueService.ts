@@ -18,18 +18,39 @@ export interface Issue {
   } | null
 }
 
+export interface IssueStatistics {
+  total: number
+  pending: number
+  in_progress: number
+  resolved: number
+  rejected: number
+}
+
 export interface PaginatedIssues {
   data: Issue[]
-  current_page: number
-  last_page: number
-  per_page: number
-  total: number
+  links: {
+    first: string | null
+    last: string | null
+    prev: string | null
+    next: string | null
+  }
+  meta: {
+    current_page: number
+    last_page: number
+    per_page: number
+    total: number
+  }
+  statistics: IssueStatistics
 }
 
 export const issueService = {
-  async getIssues(page = 1): Promise<PaginatedIssues> {
+  async getIssues(page = 1, search = '', status = 'all'): Promise<PaginatedIssues> {
     const response = await axios.get('/api/issues', {
-      params: { page },
+      params: {
+        page,
+        search: search || undefined,
+        status: status === 'all' ? undefined : status,
+      },
     })
 
     return response.data

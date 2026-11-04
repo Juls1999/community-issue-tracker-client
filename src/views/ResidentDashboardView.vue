@@ -1,18 +1,28 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import axios from 'axios'
 import { RouterLink } from 'vue-router'
 import { issueService, type Issue } from '@/services/issueService'
+
+interface IssueStatistics {
+    total: number
+    pending: number
+    in_progress: number
+    resolved: number
+    rejected: number
+}
 
 const issues = ref<Issue[]>([])
 const loading = ref(true)
 const errorMessage = ref('')
 
-const statusCounts = computed(() => ({
-    pending: issues.value.filter(i => i.status === 'pending').length,
-    in_progress: issues.value.filter(i => i.status === 'in_progress').length,
-    resolved: issues.value.filter(i => i.status === 'resolved').length,
-}))
+const statistics = ref<IssueStatistics>({
+    total: 0,
+    pending: 0,
+    in_progress: 0,
+    resolved: 0,
+    rejected: 0,
+})
 
 function statusLabel(status: Issue['status']) {
     const labels: Record<Issue['status'], string> = {
@@ -42,7 +52,10 @@ async function loadIssues() {
 
     try {
         const result = await issueService.getIssues()
+
         issues.value = result.data
+        statistics.value = result.statistics
+
     } catch (error: unknown) {
         if (axios.isAxiosError(error) && error.response?.status === 401) {
             errorMessage.value = 'Please sign in to view your reports.'
@@ -170,7 +183,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : issues.length }}
+                                {{ loading ? '—' : statistics.total }}
                             </p>
                         </div>
 
@@ -201,7 +214,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : statusCounts.pending }}
+                                {{ loading ? '—' : statistics.pending }}
                             </p>
                         </div>
 
@@ -232,7 +245,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : statusCounts.in_progress }}
+                                {{ loading ? '—' : statistics.in_progress }}
                             </p>
                         </div>
 
@@ -262,7 +275,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : statusCounts.resolved }}
+                                {{ loading ? '—' : statistics.resolved }}
                             </p>
                         </div>
 
@@ -337,7 +350,7 @@ onMounted(loadIssues)
             </div>
 
             <!-- Empty state -->
-            <div v-else-if="issues.length === 0" class="px-6 py-16 text-center">
+            <div v-else-if="statistics.total === 0" class="px-6 py-16 text-center">
                 <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/10 text-brand">
                     <svg viewBox="0 0 24 24" class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="1.7">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
@@ -392,10 +405,16 @@ onMounted(loadIssues)
                                     <span v-if="issue.barangay">{{ issue.barangay.name }}</span>
 
                                     <span class="text-border-subtle">·</span>
-                                    <span>{{ new Date(issue.created_at).toLocaleDateString('en-PH', {
-                                        year: 'numeric',
-                                        month: 'short', day: 'numeric'
-                                    }) }}</span>
+                                    <span>
+                                        {{ new Date(issue.created_at).toLocaleString('en-PH', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: 'numeric',
+                                            minute: '2-digit',
+                                            hour12: true
+                                        }) }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -425,10 +444,10 @@ onMounted(loadIssues)
             </ul>
 
             <!-- List footer -->
-            <div v-if="!loading && issues.length > 0"
+            <div v-if="!loading && statistics.total > 0"
                 class="flex flex-col gap-3 border-t border-border-subtle bg-bg-page/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p class="text-xs text-text-muted">
-                    Showing {{ Math.min(issues.length, 5) }} of {{ issues.length }} reports
+                    Showing {{ Math.min(statistics.total, 5) }} of {{ statistics.total }} reports
                 </p>
 
                 <RouterLink :to="{ name: 'resident-reports' }"
@@ -444,29 +463,39 @@ onMounted(loadIssues)
 
         <!-- Quick action -->
         <section
-            class="flex flex-col gap-4 rounded-2xl border border-border-subtle bg-bg-surface p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
-            <div class="flex items-start gap-4">
-                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
-                    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
+            class="relative flex flex-col gap-5 overflow-hidden rounded-2xl bg-brand p-5 shadow-lg shadow-brand/20 sm:flex-row sm:items-center sm:justify-between sm:p-7">
+
+            <!-- Decorative background elements -->
+            <div class="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+            <div
+                class="pointer-events-none absolute -bottom-16 right-1/3 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+
+            <div class="relative flex items-start gap-4">
+                <span
+                    class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/15 text-brand-foreground ring-1 ring-white/20">
+                    <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M12 5v14m-7-7h14" stroke-linecap="round" />
                     </svg>
                 </span>
 
                 <div>
-                    <h2 class="font-bold text-text-heading">
+                    <h2 class="text-lg font-bold text-brand-foreground">
                         Something needs attention?
                     </h2>
-                    <p class="mt-1 text-sm leading-5 text-text-muted">
-                        Help improve your community by reporting an issue.
+                    <p class="mt-1 max-w-lg text-sm leading-6 text-brand-foreground/80">
+                        Help improve your community by reporting an issue. Your voice
+                        matters in making our neighborhood better.
                     </p>
                 </div>
             </div>
 
             <RouterLink :to="{ name: 'issue-create' }"
-                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border-subtle px-4 py-2.5 text-sm font-semibold text-text-body transition hover:border-brand/40 hover:bg-brand/5 hover:text-brand">
+                class="relative inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-brand shadow-md transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/40">
+
                 Submit a report
 
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+                <svg viewBox="0 0 24 24" class="h-4 w-4 transition-transform group-hover:translate-x-1" fill="none"
+                    stroke="currentColor" stroke-width="2">
                     <path d="M5 12h14m-6-6 6 6-6 6" />
                 </svg>
             </RouterLink>

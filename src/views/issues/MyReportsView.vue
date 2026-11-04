@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { RouterLink } from 'vue-router'
-import { watch } from 'vue'
+import { issueService } from '@/services/issueService'
+import type {
+    Issue,
+    IssueStatistics,
+    PaginatedIssues
+} from '@/services/issueService'
 
 type ReportStatus =
     | 'pending'
@@ -12,28 +17,26 @@ type ReportStatus =
 
 type ReportPriority = 'low' | 'medium' | 'high' | 'urgent'
 
-interface Category {
-    id: number
-    name: string
-}
 
-interface IssueReport {
-    uuid: string
-    title: string
-    description: string
-    status: ReportStatus | string
-    priority: ReportPriority | string
-    created_at: string
-    category?: Category
-}
-
-const reports = ref<IssueReport[]>([])
+const reports = ref<Issue[]>([])
 const isLoading = ref(true)
 const errorMessage = ref('')
+
 const searchQuery = ref('')
 const selectedStatus = ref('all')
+
 const currentPage = ref(1)
-const perPage = 6
+const lastPage = ref(1)
+const perPage = ref(10)
+const totalReports = ref(0)
+
+const statistics = ref<IssueStatistics>({
+    total: 0,
+    pending: 0,
+    in_progress: 0,
+    resolved: 0,
+    rejected: 0,
+})
 
 const statuses = [
     { label: 'All Reports', value: 'all' },
@@ -43,41 +46,57 @@ const statuses = [
     { label: 'Rejected', value: 'rejected' },
 ]
 
-const filteredReports = computed(() => {
-    const query = searchQuery.value.trim().toLowerCase()
+let searchTimeout: ReturnType<typeof setTimeout> | undefined
 
-    return reports.value.filter((report) => {
-        const matchesStatus =
-            selectedStatus.value === 'all' ||
-            report.status.toLowerCase() === selectedStatus.value
+async function fetchReports(page = 1) {
+    isLoading.value = true
+    errorMessage.value = ''
 
-        const matchesSearch =
-            !query ||
-            report.title.toLowerCase().includes(query) ||
-            report.description.toLowerCase().includes(query) ||
-            report.uuid.toLowerCase().includes(query) ||
-            (report.category?.name ?? '').toLowerCase().includes(query)
+    try {
+        const result: PaginatedIssues = await issueService.getIssues(
+            page,
+            searchQuery.value.trim(),
+            selectedStatus.value
+        )
 
-        return matchesStatus && matchesSearch
-    })
-})
+        reports.value = result.data
 
-const totalPages = computed(() =>
-    Math.max(1, Math.ceil(filteredReports.value.length / perPage)),
-)
+        // Laravel pagination metadata
+        currentPage.value = result.meta.current_page
+        lastPage.value = result.meta.last_page
+        perPage.value = result.meta.per_page
+        totalReports.value = result.meta.total
 
-const paginatedReports = computed(() => {
-    const start = (currentPage.value - 1) * perPage
-    return filteredReports.value.slice(start, start + perPage)
-})
+        // Statistics across all accessible issues
+        statistics.value = result.statistics
 
-const statusCounts = computed(() => ({
-    all: reports.value.length,
-    pending: reports.value.filter((r) => r.status === 'pending').length,
-    in_progress: reports.value.filter((r) => r.status === 'in_progress').length,
-    resolved: reports.value.filter((r) => r.status === 'resolved').length,
-    rejected: reports.value.filter((r) => r.status === 'rejected').length,
-}))
+    } catch (error: unknown) {
+        console.error('Failed to load reports:', error)
+
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+            errorMessage.value = 'Please sign in to view your reports.'
+        } else {
+            errorMessage.value =
+                'We could not load your reports. Please try again.'
+        }
+    } finally {
+        isLoading.value = false
+    }
+}
+
+function changePage(page: number) {
+    if (
+        page < 1 ||
+        page > lastPage.value ||
+        page === currentPage.value ||
+        isLoading.value
+    ) {
+        return
+    }
+
+    fetchReports(page)
+}
+
 
 function formatStatus(status: string) {
     return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) =>
@@ -96,68 +115,31 @@ function statusClasses(status: string) {
     return styles[status] ?? 'bg-bg-page text-text-muted'
 }
 
-function priorityClasses(priority: string) {
-    const styles: Record<string, string> = {
-        low: 'text-text-muted',
-        medium: 'text-blue-700',
-        high: 'text-orange-700',
-        urgent: 'text-red-700',
-    }
-
-    return styles[priority] ?? 'text-text-muted'
-}
-
 function formatDate(date: string) {
     if (!date) return 'Date unavailable'
 
     const parsedDate = new Date(date)
 
-    if (Number.isNaN(parsedDate.getTime())) return 'Date unavailable'
+    if (Number.isNaN(parsedDate.getTime())) {
+        return 'Date unavailable'
+    }
 
     return new Intl.DateTimeFormat('en-PH', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
     }).format(parsedDate)
 }
 
-async function fetchReports() {
-    isLoading.value = true
-    errorMessage.value = ''
-
-    try {
-        // Replace this URL if your Laravel API uses a different endpoint.
-        const response = await axios.get('/api/issues')
-
-        // Supports either a plain array or Laravel's { data: [...] } response.
-        const payload = response.data
-        const data = Array.isArray(payload) ? payload : payload.data
-
-        if (!Array.isArray(data)) {
-            throw new Error('The server returned an unexpected reports format.')
-        }
-
-        reports.value = data
-    } catch (error: unknown) {
-        console.error('Failed to load reports:', error)
-        errorMessage.value =
-            'We could not load your reports. Please try again.'
-    } finally {
-        isLoading.value = false
-    }
-}
-
-function applyFilters() {
-    currentPage.value = 1
-}
-
-function categoryClasses(category?: Category) {
+function categoryClasses(category?: Issue['category'] | null) {
     if (!category) {
         return 'bg-bg-page text-text-muted ring-border-subtle'
     }
 
     const colors: Record<string, string> = {
-        // Match these keys to your actual category names.
         'Waste Management': 'bg-blue-100 text-blue-800 ring-blue-200',
         'Street Lighting': 'bg-emerald-100 text-emerald-800 ring-emerald-200',
         'Drainage and Flooding': 'bg-red-100 text-red-800 ring-red-200',
@@ -171,15 +153,28 @@ function categoryClasses(category?: Category) {
 }
 
 
+// Debounced server-side search and status filtering
+watch(
+    [searchQuery, selectedStatus],
+    () => {
+        clearTimeout(searchTimeout)
 
-watch(totalPages, (pages) => {
-    if (currentPage.value > pages) {
-        currentPage.value = pages
+        searchTimeout = setTimeout(() => {
+            fetchReports(1)
+        }, 350)
     }
+)
+
+
+onMounted(() => {
+    fetchReports(1)
 })
 
-onMounted(fetchReports)
+onUnmounted(() => {
+    clearTimeout(searchTimeout)
+})
 </script>
+
 
 <template>
     <section class="mx-auto w-full max-w-7xl space-y-8 pb-8">
@@ -222,28 +217,28 @@ onMounted(fetchReports)
             <button v-for="item in [
                 {
                     label: 'Total Reports',
-                    value: statusCounts.all,
+                    value: statistics.total,
                     key: 'all',
                     description: 'All submitted reports',
                     icon: 'all',
                 },
                 {
                     label: 'Pending',
-                    value: statusCounts.pending,
+                    value: statistics.pending,
                     key: 'pending',
                     description: 'Awaiting review',
                     icon: 'pending',
                 },
                 {
                     label: 'In Progress',
-                    value: statusCounts.in_progress,
+                    value: statistics.in_progress,
                     key: 'in_progress',
                     description: 'Being addressed',
                     icon: 'progress',
                 },
                 {
                     label: 'Resolved',
-                    value: statusCounts.resolved,
+                    value: statistics.resolved,
                     key: 'resolved',
                     description: 'Successfully completed',
                     icon: 'resolved',
@@ -253,7 +248,7 @@ onMounted(fetchReports)
                 :class="selectedStatus === item.key
                     ? 'border-brand ring-2 ring-brand/15'
                     : 'border-border-subtle hover:border-brand/40'
-                    " @click="selectedStatus = item.key; applyFilters()">
+                    " @click="selectedStatus = item.key">
                 <div class="flex items-start justify-between gap-4">
                     <div>
                         <p class="text-sm font-medium text-text-muted">
@@ -314,9 +309,12 @@ onMounted(fetchReports)
             </button>
         </div>
 
+
         <!-- Search and filters -->
         <div class="rounded-2xl border border-border-subtle bg-bg-surface p-4 shadow-sm sm:p-5">
             <div class="flex flex-col gap-3 md:flex-row">
+
+                <!-- Search input -->
                 <div class="relative flex-1">
                     <svg viewBox="0 0 24 24" class="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-text-muted"
                         fill="none" stroke="currentColor" stroke-width="1.8">
@@ -324,15 +322,15 @@ onMounted(fetchReports)
                         <path d="m20 20-4-4" />
                     </svg>
 
-                    <input v-model="searchQuery" type="search" placeholder="Search reports by title, category, or ID..."
-                        class="w-full rounded-xl border border-border-subtle bg-bg-page py-3.5 pl-12 pr-4 text-sm text-text-heading outline-none transition placeholder:text-text-muted focus:border-brand focus:ring-4 focus:ring-brand/10"
-                        @input="applyFilters" />
+                    <input v-model="searchQuery" type="search"
+                        placeholder="Search reports by title, description, category, or ID..."
+                        class="w-full rounded-xl border border-border-subtle bg-bg-page py-3.5 pl-12 pr-4 text-sm text-text-heading outline-none transition placeholder:text-text-muted focus:border-brand focus:ring-4 focus:ring-brand/10" />
                 </div>
 
+                <!-- Status filter -->
                 <div class="relative md:w-56">
                     <select v-model="selectedStatus"
-                        class="w-full appearance-none rounded-xl border border-border-subtle bg-bg-page px-4 py-3.5 pr-10 text-sm font-medium text-text-heading outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10"
-                        @change="applyFilters">
+                        class="w-full appearance-none rounded-xl border border-border-subtle bg-bg-page px-4 py-3.5 pr-10 text-sm font-medium text-text-heading outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
                         <option v-for="status in statuses" :key="status.value" :value="status.value">
                             {{ status.label }}
                         </option>
@@ -346,19 +344,27 @@ onMounted(fetchReports)
                 </div>
             </div>
 
+            <!-- Search information -->
             <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
                 <p class="text-xs text-text-muted">
-                    {{ filteredReports.length }}
-                    {{ filteredReports.length === 1 ? 'report' : 'reports' }} found
+                    <span class="font-semibold text-text-heading">
+                        {{ totalReports }}
+                    </span>
+                    {{ totalReports === 1 ? 'report' : 'reports' }} found
+
+                    <span v-if="searchQuery.trim()">
+                        matching "{{ searchQuery.trim() }}"
+                    </span>
                 </p>
 
                 <button v-if="searchQuery || selectedStatus !== 'all'" type="button"
                     class="text-xs font-semibold text-brand transition hover:underline"
-                    @click="searchQuery = ''; selectedStatus = 'all'; applyFilters()">
+                    @click="searchQuery = ''; selectedStatus = 'all'">
                     Clear filters
                 </button>
             </div>
         </div>
+
 
         <!-- Loading state -->
         <div v-if="isLoading"
@@ -391,13 +397,13 @@ onMounted(fetchReports)
 
             <button type="button"
                 class="mt-5 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground transition hover:opacity-90"
-                @click="fetchReports">
+                @click="fetchReports()">
                 Try Again
             </button>
         </div>
 
         <!-- Empty state -->
-        <div v-else-if="filteredReports.length === 0"
+        <div v-else-if="reports.length === 0"
             class="rounded-2xl border border-border-subtle bg-bg-surface px-6 py-16 text-center shadow-sm">
             <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/10 text-brand">
                 <svg viewBox="0 0 24 24" class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -407,12 +413,12 @@ onMounted(fetchReports)
             </div>
 
             <h2 class="mt-5 text-xl font-bold text-text-heading">
-                {{ reports.length === 0 ? 'No reports yet' : 'No matching reports' }}
+                {{ statistics.total === 0 ? 'No reports yet' : 'No matching reports' }}
             </h2>
 
             <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-text-muted">
                 {{
-                    reports.length === 0
+                    statistics.total === 0
                         ? 'Your submitted community issues will appear here so you can track their progress.'
                         : 'Try another search term or choose a different status to find your report.'
                 }}
@@ -428,7 +434,7 @@ onMounted(fetchReports)
 
             <button v-else type="button"
                 class="mt-6 rounded-xl border border-border-subtle px-5 py-2.5 text-sm font-semibold text-text-body transition hover:border-brand hover:text-brand"
-                @click="searchQuery = ''; selectedStatus = 'all'; applyFilters()">
+                @click="searchQuery = ''; selectedStatus = 'all'">
                 Clear filters
             </button>
         </div>
@@ -447,7 +453,7 @@ onMounted(fetchReports)
                 </div>
             </div>
 
-            <RouterLink v-for="report in paginatedReports" :key="report.uuid"
+            <RouterLink v-for="report in reports" :key="report.uuid"
                 :to="{ name: 'issueDiscussion', params: { uuid: report.uuid } }"
                 class="group relative block overflow-hidden rounded-2xl border border-border-subtle bg-bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/5">
                 <!-- Status accent -->
@@ -548,25 +554,24 @@ onMounted(fetchReports)
             </RouterLink>
 
             <!-- Pagination -->
-            <div
+            <div v-if="totalReports > 0"
                 class="flex flex-col gap-4 rounded-2xl border border-border-subtle bg-bg-surface p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5">
                 <p class="text-sm text-text-muted">
                     Showing
                     <span class="font-semibold text-text-heading">
-                        {{ (currentPage - 1) * perPage + 1 }}–{{ Math.min(currentPage * perPage, filteredReports.length)
-                        }}
+                        {{ (currentPage - 1) * perPage + 1 }}–{{ Math.min(currentPage * perPage, totalReports) }}
                     </span>
                     of
                     <span class="font-semibold text-text-heading">
-                        {{ filteredReports.length }}
+                        {{ totalReports }}
                     </span>
                     reports
                 </p>
 
                 <div class="flex items-center gap-2">
-                    <button type="button" :disabled="currentPage === 1"
+                    <button type="button" :disabled="currentPage === 1 || isLoading"
                         class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle px-3 py-2.5 text-sm font-medium text-text-body transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
-                        @click="currentPage--">
+                        @click="changePage(currentPage - 1)">
                         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="m15 18-6-6 6-6" />
                         </svg>
@@ -574,12 +579,12 @@ onMounted(fetchReports)
                     </button>
 
                     <span class="rounded-xl bg-brand/10 px-4 py-2.5 text-sm font-bold text-brand">
-                        {{ currentPage }} / {{ totalPages }}
+                        {{ currentPage }} / {{ lastPage }}
                     </span>
 
-                    <button type="button" :disabled="currentPage >= totalPages"
+                    <button type="button" :disabled="currentPage >= lastPage || isLoading"
                         class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle px-3 py-2.5 text-sm font-medium text-text-body transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
-                        @click="currentPage++">
+                        @click="changePage(currentPage + 1)">
                         <span class="hidden sm:inline">Next</span>
                         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="m9 18 6-6-6-6" />
