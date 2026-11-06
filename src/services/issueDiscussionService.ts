@@ -1,33 +1,11 @@
+import type { IssueComment } from '@/types'
 import axios from 'axios'
 
-export interface IssueComment {
-  id: number
-  body: string
-  is_internal: boolean
-  created_at: string
-  user: {
-    id: number
-    name: string
-  }
-}
-
-export interface IssueAttachment {
-  id: number
-  original_name: string
-  mime_type: string
-  file_size: number
-  created_at: string
-  uploader?: {
-    id: number
-    name: string
-  }
-}
-
 export const issueDiscussionService = {
-  async getComments(issueUuid: string) {
-    const response = await axios.get(`/api/issues/${issueUuid}/comments`)
+  async getComments(issueUuid: string): Promise<IssueComment[]> {
+    const { data } = await axios.get<{ data: IssueComment[] }>(`/api/issues/${issueUuid}/comments`)
 
-    return response.data
+    return data.data
   },
 
   async addComment(issueUuid: string, body: string) {

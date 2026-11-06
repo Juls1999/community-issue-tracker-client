@@ -1,74 +1,83 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { reactive, ref } from 'vue'
 import axios from 'axios'
+import { useRouter } from 'vue-router'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { issueService } from '@/services/issueService'
 import { useAuthStore } from '@/stores/authStore'
+import type { IssuePriority } from '@/types'
 
-interface Category {
-    id: number
-    name: string
-}
 
 const authStore = useAuthStore()
 const router = useRouter()
+const queryClient = useQueryClient()
 
-const categories = ref<Category[]>([])
-const title = ref('')
-const description = ref('')
-const categoryId = ref('')
-const priority = ref<'low' | 'medium' | 'high' | 'urgent'>('medium')
-
-const loadingCategories = ref(true)
-const submitting = ref(false)
-const errorMessage = ref('')
-
-onMounted(async () => {
-    try {
-        const response = await axios.get('/api/issue-categories')
-        categories.value = response.data.data
-    } catch {
-        errorMessage.value = 'Unable to load issue categories.'
-    } finally {
-        loadingCategories.value = false
-    }
+// Form state
+const formData = reactive<{
+    title: string
+    description: string
+    categoryId: number | null
+    priority: IssuePriority
+}>({
+    title: '',
+    description: '',
+    categoryId: 0,
+    priority: 'medium',
 })
 
-async function submitIssue() {
-    if (submitting.value) return
+const errorMessage = ref('')
 
-    submitting.value = true
-    errorMessage.value = ''
+// Fetch categories
+const {
+    data: categories,
+    isPending: loadingCategories,
+    isError: categoriesError,
+} = useQuery({
+    queryKey: ['issue-categories'],
+    queryFn: async () => await issueService.getIssueCategories(),
+    staleTime: Infinity,
+})
 
-    try {
-        const issue = await issueService.createIssue({
-            title: title.value.trim(),
-            description: description.value.trim(),
-            issue_category_id: Number(categoryId.value),
-            priority: priority.value,
-            barangay_id: authStore.user?.barangay?.id
+// Submit issue
+const createIssueMutation = useMutation({
+    mutationFn: async () => await issueService.createIssue({
+        ...formData,
+        barangayId: authStore.user?.barangay?.id ?? null,
+    }),
+
+    onSuccess: async (issue) => {
+        await router.push({
+            name: 'issueDiscussion',
+            params: { uuid: issue.uuid },
         })
+    },
 
-        await router.push(`/issues/${issue.uuid}`)
-    } catch (error: unknown) {
+    onError: (error: unknown) => {
         if (axios.isAxiosError(error) && error.response?.status === 422) {
             errorMessage.value = Object.values(
-                error.response.data?.errors ?? {},
+                error.response.data?.errors ?? {}
             ).flat().join(' ') || 'Please check your entries.'
         } else if (
-            axios.isAxiosError(error)
-            && error.response?.status === 403
+            axios.isAxiosError(error) &&
+            error.response?.status === 403
         ) {
             errorMessage.value = 'Your account cannot submit issues.'
         } else {
             errorMessage.value =
                 'Could not submit your report. Please try again.'
         }
-    } finally {
-        submitting.value = false
-    }
+    },
+})
+
+// Handle form submission
+const handleSubmit = () => {
+    errorMessage.value = ''
+    queryClient.invalidateQueries({ queryKey: ['issues'] })
+    createIssueMutation.reset()
+    createIssueMutation.mutate()
 }
 </script>
+
 
 
 <template>
@@ -146,7 +155,7 @@ async function submitIssue() {
 
         <!-- Report form -->
         <form class="overflow-hidden rounded-3xl border border-border-subtle bg-bg-surface shadow-sm"
-            @submit.prevent="submitIssue">
+            @submit.prevent="handleSubmit">
             <!-- Form heading -->
             <div class="border-b border-border-subtle px-5 py-5 sm:px-8">
                 <h2 class="text-lg font-bold text-text-heading">
@@ -166,7 +175,7 @@ async function submitIssue() {
                         <span class="text-brand">*</span>
                     </label>
 
-                    <input id="title" v-model="title" type="text" required maxlength="255"
+                    <input id="title" v-model="formData.title" type="text" required maxlength="255"
                         placeholder="e.g. Damaged road near the barangay hall"
                         class="w-full rounded-xl border border-border-subtle bg-bg-page px-4 py-3.5 text-sm text-text-heading outline-none transition placeholder:text-text-muted focus:border-brand focus:ring-4 focus:ring-brand/10" />
 
@@ -175,7 +184,7 @@ async function submitIssue() {
                             Give your report a short, descriptive title.
                         </p>
                         <span class="shrink-0 text-xs tabular-nums text-text-muted">
-                            {{ title.length }}/255
+                            {{ formData.title.length }}/255
                         </span>
                     </div>
                 </div>
@@ -187,7 +196,7 @@ async function submitIssue() {
                         <span class="text-brand">*</span>
                     </label>
 
-                    <textarea id="description" v-model="description" required maxlength="10000" rows="6"
+                    <textarea id="description" v-model="formData.description" required maxlength="10000" rows="6"
                         placeholder="Describe what happened, where the issue is located, and how it affects the community..."
                         class="w-full resize-y rounded-xl border border-border-subtle bg-bg-page px-4 py-3.5 text-sm leading-6 text-text-heading outline-none transition placeholder:text-text-muted focus:border-brand focus:ring-4 focus:ring-brand/10" />
 
@@ -197,7 +206,7 @@ async function submitIssue() {
                             investigate.
                         </p>
                         <span class="shrink-0 text-xs tabular-nums text-text-muted">
-                            {{ description.length }}/10,000
+                            {{ formData.description.length }}/10,000
                         </span>
                     </div>
                 </div>
@@ -210,20 +219,20 @@ async function submitIssue() {
                     </label>
 
                     <div class="relative">
-                        <select id="category" v-model="categoryId" required
-                            :disabled="loadingCategories || categories.length === 0"
+                        <select id="category" v-model="formData.categoryId" required
+                            :disabled="loadingCategories || !categories?.length"
                             class="w-full appearance-none rounded-xl border border-border-subtle bg-bg-page px-4 py-3.5 pr-11 text-sm text-text-heading outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10 disabled:cursor-not-allowed disabled:opacity-60">
-                            <option value="" disabled>
+                            <option value="0" disabled>
                                 {{
                                     loadingCategories
                                         ? 'Loading categories...'
-                                        : categories.length === 0
+                                        : !categories?.length
                                             ? 'No categories available'
                                             : 'Select the appropriate category'
                                 }}
                             </option>
 
-                            <option v-for="category in categories" :key="category.id" :value="String(category.id)">
+                            <option v-for="category in categories" :key="category.id" :value="category.id">
                                 {{ category.name }}
                             </option>
                         </select>
@@ -282,11 +291,11 @@ async function submitIssue() {
                             },
                         ]" :key="option.value"
                             class="flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition duration-200 hover:border-brand/40"
-                            :class="priority === option.value
-                                    ? option.selected
-                                    : 'border-border-subtle bg-bg-page/50'
+                            :class="formData.priority === option.value
+                                ? option.selected
+                                : 'border-border-subtle bg-bg-page/50'
                                 ">
-                            <input v-model="priority" type="radio" name="priority" :value="option.value"
+                            <input v-model="formData.priority" type="radio" name="priority" :value="option.value"
                                 class="mt-1 h-4 w-4 shrink-0 accent-[var(--color-brand)]" />
 
                             <span class="min-w-0 flex-1">
@@ -295,8 +304,8 @@ async function submitIssue() {
                                         {{ option.label }}
                                     </span>
 
-                                    <svg v-if="priority === option.value" viewBox="0 0 24 24" class="h-4 w-4 text-brand"
-                                        fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <svg v-if="formData.priority === option.value" viewBox="0 0 24 24"
+                                        class="h-4 w-4 text-brand" fill="none" stroke="currentColor" stroke-width="2.5">
                                         <path d="m5 12 4 4L19 6" />
                                     </svg>
                                 </span>
@@ -322,9 +331,11 @@ async function submitIssue() {
                         Required fields
                     </p>
 
-                    <button type="submit" :disabled="submitting || loadingCategories || categories.length === 0"
+                    <button type="submit"
+                        :disabled="createIssueMutation.isPending.value || loadingCategories || categories?.length === 0"
                         class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3.5 text-sm font-semibold text-brand-foreground shadow-md shadow-brand/15 transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 sm:w-auto">
-                        <svg v-if="submitting" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <svg v-if="createIssueMutation.isPending.value" class="h-4 w-4 animate-spin" viewBox="0 0 24 24"
+                            fill="none">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                             <path class="opacity-75" fill="currentColor"
                                 d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
@@ -336,7 +347,7 @@ async function submitIssue() {
                             <path d="M22 2 11 13" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
 
-                        {{ submitting ? 'Submitting report...' : 'Submit report' }}
+                        {{ createIssueMutation.isPending.value ? 'Submitting report...' : 'Submit report' }}
                     </button>
                 </div>
             </footer>

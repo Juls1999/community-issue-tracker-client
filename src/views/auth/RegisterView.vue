@@ -1,34 +1,36 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import axios from 'axios'
+import type { RegisterParams } from '@/types'
+import { useMutation, useQuery } from '@tanstack/vue-query'
+import { useAuthStore } from '@/stores/authStore'
+import { issueService } from '@/services/issueService'
 
-interface Barangay {
-    id: number
-    name: string
-}
-
-interface RegisterForm {
-    name: string
-    email: string
-    barangay_id: string
-    password: string
-    passwordConfirmation: string
-}
 
 const router = useRouter()
+const authStore = useAuthStore()
 
-const form = ref<RegisterForm>({
+
+/**
+ * BARANGAY QUERY
+ */
+const { data: barangays, isLoading: loadingBarangays, isError: errorBarangays } = useQuery({
+    queryKey: ['barangays'],
+    queryFn: () => issueService.getBarangays(),
+    staleTime: Infinity,
+})
+
+
+const form = reactive<RegisterParams>({
     name: '',
     email: '',
-    barangay_id: '',
+    barangayId: '',
     password: '',
     passwordConfirmation: '',
 })
 
-const barangays = ref<Barangay[]>([])
-const loadingBarangays = ref(false)
-const submitting = ref(false)
+
 
 const showPassword = ref(false)
 const showPasswordConfirmation = ref(false)
@@ -37,74 +39,27 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const validationErrors = ref<Record<string, string[]>>({})
 
-onMounted(async () => {
-    loadingBarangays.value = true
 
-    try {
-        // Assumes this endpoint returns { data: [{ id, name }] }
-        const response = await axios.get('/api/barangays')
-        barangays.value = response.data.data ?? response.data
-    } catch {
-        errorMessage.value = 'Unable to load barangays. Please refresh the page and try again.'
-    } finally {
-        loadingBarangays.value = false
-    }
-})
-
-function getFieldError(field: string): string {
+const getFieldError = (field: string): string => {
     return validationErrors.value[field]?.[0] ?? ''
 }
 
-function validateForm(): boolean {
-    validationErrors.value = {}
 
-    if (!form.value.name.trim()) {
-        validationErrors.value.name = ['Please enter your full name.']
-    }
+/**
+ * REGISTER MUTATION
+ */
 
-    if (!form.value.email.trim()) {
-        validationErrors.value.email = ['Please enter your email address.']
-    }
-
-    if (!form.value.barangay_id) {
-        validationErrors.value.barangay_id = ['Please select your barangay.']
-    }
-
-    if (!form.value.password) {
-        validationErrors.value.password = ['Please enter a password.']
-    }
-
-    if (form.value.password !== form.value.passwordConfirmation) {
-        validationErrors.value.password_confirmation = [
-            'The passwords do not match.',
-        ]
-    }
-
-    return Object.keys(validationErrors.value).length === 0
-}
-
-async function register() {
-    if (submitting.value || !validateForm()) return
-
-    submitting.value = true
-    errorMessage.value = ''
-    successMessage.value = ''
-
-    try {
-        // Get the CSRF cookie when using Laravel Sanctum SPA authentication.
-        await axios.get('/sanctum/csrf-cookie')
-
-        await axios.post('/register', {
-            name: form.value.name.trim(),
-            email: form.value.email.trim(),
-            barangay_id: Number(form.value.barangay_id),
-            password: form.value.password,
-            password_confirmation: form.value.passwordConfirmation,
-        })
-
-        // Assumes successful registration also authenticates the user.
+const registerMutation = useMutation({
+    mutationFn: async (credentials: RegisterParams) => {
+        await authStore.register(credentials)
+    },
+    onSuccess: async () => {
         await router.push({ name: 'resident-dashboard' })
-    } catch (error: unknown) {
+    },
+    onError: (error: unknown) => {
+        form.password = ''
+        form.passwordConfirmation = ''
+
         if (axios.isAxiosError(error)) {
             const response = error.response
 
@@ -133,10 +88,9 @@ async function register() {
             errorMessage.value =
                 'Something went wrong. Please try again.'
         }
-    } finally {
-        submitting.value = false
-    }
-}
+    },
+})
+
 </script>
 
 <template>
@@ -260,7 +214,7 @@ async function register() {
                         {{ successMessage }}
                     </div>
 
-                    <form class="space-y-5" @submit.prevent="register">
+                    <form class="space-y-5" @submit.prevent="registerMutation.mutate(form)">
                         <!-- Name -->
                         <div>
                             <label for="name" class="mb-2 block text-sm font-medium
@@ -327,27 +281,29 @@ async function register() {
 
                         <!-- Barangay -->
                         <div>
-                            <label for="barangay_id" class="mb-2 block text-sm font-medium
+                            <label for="barangayId" class="mb-2 block text-sm font-medium
                                        text-text-heading">
                                 Barangay
                             </label>
 
-                            <select id="barangay_id" v-model="form.barangay_id" name="barangay_id" required
-                                :disabled="loadingBarangays || barangays.length === 0"
-                                :aria-invalid="!!getFieldError('barangay_id')" class="w-full rounded-xl border border-border-subtle
-                                       bg-bg-page px-4 py-3 text-text-heading
-                                       outline-none transition
-                                       focus:border-brand focus:ring-2
-                                       focus:ring-brand/20
-                                       disabled:cursor-not-allowed
-                                       disabled:opacity-60">
+                            <select id="barangayId" v-model="form.barangayId" name="barangayId" required
+                                :disabled="loadingBarangays || errorBarangays || !barangays?.length"
+                                :aria-invalid="!!getFieldError('barangayId')" class="w-full rounded-xl border border-border-subtle
+                                bg-bg-page px-4 py-3 text-text-heading
+                                outline-none transition
+                                focus:border-brand focus:ring-2
+                                focus:ring-brand/20
+                                disabled:cursor-not-allowed
+                                disabled:opacity-60">
                                 <option value="" disabled>
                                     {{
                                         loadingBarangays
                                             ? 'Loading barangays...'
-                                            : barangays.length
-                                                ? 'Select your barangay'
-                                                : 'No barangays available'
+                                            : errorBarangays
+                                                ? 'Unable to load barangays'
+                                                : !barangays?.length
+                                                    ? 'No barangays available'
+                                                    : 'Select your barangay'
                                     }}
                                 </option>
 
@@ -356,9 +312,9 @@ async function register() {
                                 </option>
                             </select>
 
-                            <p v-if="getFieldError('barangay_id')" class="mt-1.5 text-sm text-red-600
+                            <p v-if="getFieldError('barangayId')" class="mt-1.5 text-sm text-red-600
                                        dark:text-red-400">
-                                {{ getFieldError('barangay_id') }}
+                                {{ getFieldError('barangayId') }}
                             </p>
                         </div>
 
@@ -472,23 +428,23 @@ async function register() {
                             </p>
                         </div>
 
-                        <button type="submit" :disabled="submitting || loadingBarangays || barangays.length === 0"
-                            class="flex w-full items-center justify-center gap-2
+                        <button type="submit"
+                            :disabled="registerMutation.isPending.value || loadingBarangays || !barangays" class="flex w-full items-center justify-center gap-2
                                    rounded-xl bg-brand px-5 py-3.5
                                    font-semibold text-brand-foreground
                                    transition hover:opacity-90
                                    focus:outline-none focus:ring-2
                                    focus:ring-brand focus:ring-offset-2
                                    disabled:cursor-not-allowed disabled:opacity-60">
-                            <svg v-if="submitting" class="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none"
-                                aria-hidden="true">
+                            <svg v-if="registerMutation.isPending.value" class="h-5 w-5 animate-spin"
+                                viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
                                     stroke-width="4" />
                                 <path class="opacity-75" fill="currentColor"
                                     d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
                             </svg>
 
-                            {{ submitting ? 'Creating account...' : 'Create Account' }}
+                            {{ registerMutation.isPending.value ? 'Creating account...' : 'Create Account' }}
                         </button>
                     </form>
 

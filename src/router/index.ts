@@ -75,6 +75,27 @@ const router = createRouter({
       ],
     },
   ],
+
+  scrollBehavior(to, from, savedPosition) {
+    // Restore previous scroll position
+    if (savedPosition) {
+      return savedPosition
+    }
+
+    // Preserve scroll when navigating with hash
+    if (to.hash) {
+      return {
+        el: to.hash,
+        behavior: 'smooth',
+      }
+    }
+
+    // Scroll to top for new page navigation
+    return {
+      top: 0,
+      behavior: 'smooth',
+    }
+  },
 })
 
 function getDashboardRoute(role: string | null | undefined) {

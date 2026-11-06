@@ -1,34 +1,122 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import axios from 'axios'
 import {
+    useQuery,
+    useMutation,
+    useQueryClient,
+} from '@tanstack/vue-query'
+
+import {
     issueDiscussionService,
-    type IssueComment,
-    type IssueAttachment,
 } from '@/services/issueDiscussionService'
+
+import { issueDiscussionKeys } from '@/queries/issueDiscussionKeys'
+import type { IssueAttachment, IssueComment } from '@/types'
+
+import { toast } from 'vue3-toastify'
+
+// -----------------------------------------
+// Props
+// -----------------------------------------
 
 const props = defineProps<{
     issueUuid: string
 }>()
 
-const comments = ref<IssueComment[]>([])
-const attachments = ref<IssueAttachment[]>([])
+// -----------------------------------------
+// Query client
+// -----------------------------------------
+
+const queryClient = useQueryClient()
+
+// -----------------------------------------
+// Local UI state
+// -----------------------------------------
+
 const commentBody = ref('')
 const selectedImages = ref<File[]>([])
 
-// Maps attachment IDs to browser image URLs.
+const actionError = ref('')
+
 const imageUrls = ref<Record<number, string>>({})
 const failedImages = ref<number[]>([])
 
-const loading = ref(false)
-const submittingComment = ref(false)
-const uploadingImage = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
+// -----------------------------------------
+// Query keys
+// -----------------------------------------
 
-let discussionRequestId = 0
+const commentsKey = computed(() =>
+    issueDiscussionKeys.comments(props.issueUuid)
+)
 
-function getErrorMessage(error: unknown): string {
+const attachmentsKey = computed(() =>
+    issueDiscussionKeys.attachments(props.issueUuid)
+)
+
+// -----------------------------------------
+// Comments query
+// -----------------------------------------
+
+const {
+    data: commentsData,
+    isPending: commentsPending,
+    isError: commentsError,
+    error: commentsQueryError,
+    refetch: refetchComments,
+} = useQuery({
+    queryKey: commentsKey,
+
+    queryFn: () =>
+        issueDiscussionService.getComments(props.issueUuid),
+
+    enabled: computed(() => !!props.issueUuid),
+
+    staleTime: 10000 * 60 * 5,
+})
+
+// -----------------------------------------
+// Attachments query
+// -----------------------------------------
+
+const {
+    data: attachmentsData,
+    isPending: attachmentsPending,
+    isError: attachmentsError,
+    error: attachmentsQueryError,
+    refetch: refetchAttachments,
+} = useQuery({
+    queryKey: attachmentsKey,
+
+    queryFn: () =>
+        issueDiscussionService.getAttachments(props.issueUuid),
+
+    enabled: computed(() => !!props.issueUuid),
+
+    staleTime: 1000 * 60 * 5,
+})
+
+// -----------------------------------------
+// Derived server data
+// -----------------------------------------
+
+const comments = computed<IssueComment[]>(() =>
+    commentsData.value ?? []
+)
+
+const attachments = computed<IssueAttachment[]>(() =>
+    attachmentsData.value?.data ?? []
+)
+
+const loading = computed(() =>
+    commentsPending.value || attachmentsPending.value
+)
+
+// -----------------------------------------
+// Error handling
+// -----------------------------------------
+
+const getErrorMessage = (error: unknown): string => {
     if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {
             return 'Your session has expired. Please sign in again.'
@@ -50,136 +138,74 @@ function getErrorMessage(error: unknown): string {
     return 'Something went wrong. Please try again.'
 }
 
-function clearImageUrls() {
-    Object.values(imageUrls.value).forEach((url) => {
-        URL.revokeObjectURL(url)
-    })
+const errorMessage = computed(() => {
+    if (actionError.value) {
+        return actionError.value
+    }
 
-    imageUrls.value = {}
-    failedImages.value = []
-}
+    if (commentsError.value) {
+        return getErrorMessage(commentsQueryError.value)
+    }
 
-async function loadAttachmentImages(requestId: number) {
-    clearImageUrls()
+    if (attachmentsError.value) {
+        return getErrorMessage(attachmentsQueryError.value)
+    }
 
-    const results = await Promise.all(
-        attachments.value.map(async (attachment) => {
-            try {
-                const url = issueDiscussionService.getDownloadUrl(
-                    props.issueUuid,
-                    attachment.id,
-                )
+    return ''
+})
 
-                const response = await axios.get(url, {
-                    responseType: 'blob',
-                })
+// -----------------------------------------
+// Add comment mutation
+// -----------------------------------------
 
-                // Ignore results from an outdated issue request.
-                if (requestId !== discussionRequestId) {
-                    return null
-                }
+const addCommentMutation = useMutation({
+    mutationFn: (body: string) =>
+        issueDiscussionService.addComment(
+            props.issueUuid,
+            body,
+        ),
 
-                if (!response.data.type.startsWith('image/')) {
-                    return { id: attachment.id, url: null }
-                }
+    onSuccess: async () => {
+        commentBody.value = ''
+        actionError.value = ''
+        toast.success('Comment added sucessfully')
 
-                return {
-                    id: attachment.id,
-                    url: URL.createObjectURL(response.data),
-                }
-            } catch {
-                return { id: attachment.id, url: null }
-            }
-        }),
-    )
-
-    if (requestId !== discussionRequestId) {
-        results.forEach((result) => {
-            if (result?.url) {
-                URL.revokeObjectURL(result.url)
-            }
+        await queryClient.invalidateQueries({
+            queryKey: commentsKey.value,
         })
+    },
+
+    onError: (error: unknown) => {
+        actionError.value = getErrorMessage(error)
+    },
+})
+
+const submittingComment = computed(() =>
+    addCommentMutation.isPending.value
+)
+
+const submitComment = () => {
+    const body = commentBody.value.trim()
+
+    if (!body || submittingComment.value || !props.issueUuid) {
         return
     }
 
-    const urls: Record<number, string> = {}
-    const failures: number[] = []
+    actionError.value = ''
 
-    results.forEach((result) => {
-        if (result?.url) {
-            urls[result.id] = result.url
-        } else if (result) {
-            failures.push(result.id)
-        }
-    })
-
-    imageUrls.value = urls
-    failedImages.value = failures
+    addCommentMutation.mutate(body)
 }
 
-async function loadDiscussion() {
-    const requestId = ++discussionRequestId
-
-    loading.value = true
-    errorMessage.value = ''
-
-    try {
-        const [commentResponse, attachmentResponse] =
-            await Promise.all([
-                issueDiscussionService.getComments(props.issueUuid),
-                issueDiscussionService.getAttachments(props.issueUuid),
-            ])
-
-        // Prevent an older request overwriting newer issue data.
-        if (requestId !== discussionRequestId) return
-
-        comments.value = commentResponse.data
-        attachments.value = attachmentResponse.data
-
-        await loadAttachmentImages(requestId)
-    } catch (error: unknown) {
-        if (requestId === discussionRequestId) {
-            errorMessage.value = getErrorMessage(error)
-        }
-    } finally {
-        if (requestId === discussionRequestId) {
-            loading.value = false
-        }
-    }
-}
-
-async function submitComment() {
-    const body = commentBody.value.trim()
-
-    if (!body || submittingComment.value) return
-
-    submittingComment.value = true
-    errorMessage.value = ''
-    successMessage.value = ''
-
-    try {
-        const response = await issueDiscussionService.addComment(
-            props.issueUuid,
-            body,
-        )
-
-        comments.value.unshift(response.data)
-        commentBody.value = ''
-        successMessage.value = 'Comment added successfully.'
-    } catch (error: unknown) {
-        errorMessage.value = getErrorMessage(error)
-    } finally {
-        submittingComment.value = false
-    }
-}
+// -----------------------------------------
+// Image selection
+// -----------------------------------------
 
 
-function handleImageSelection(event: Event) {
+const handleImageSelection = (event: Event) => {
     const input = event.target as HTMLInputElement
     const files = Array.from(input.files ?? [])
 
-    errorMessage.value = ''
-    successMessage.value = ''
+    actionError.value = ''
 
     if (files.length === 0) {
         selectedImages.value = []
@@ -193,11 +219,11 @@ function handleImageSelection(event: Event) {
     ]
 
     const invalidType = files.find(
-        (file) => !allowedTypes.includes(file.type),
+        file => !allowedTypes.includes(file.type)
     )
 
     if (invalidType) {
-        errorMessage.value =
+        actionError.value =
             'All files must be JPG, PNG, or WebP images.'
 
         input.value = ''
@@ -206,11 +232,11 @@ function handleImageSelection(event: Event) {
     }
 
     const oversizedFile = files.find(
-        (file) => file.size > 5 * 1024 * 1024,
+        file => file.size > 5 * 1024 * 1024
     )
 
     if (oversizedFile) {
-        errorMessage.value =
+        actionError.value =
             'Each image must be 5 MB or smaller.'
 
         input.value = ''
@@ -221,26 +247,18 @@ function handleImageSelection(event: Event) {
     selectedImages.value = files
 }
 
+// -----------------------------------------
+// Upload attachment mutation
+// -----------------------------------------
 
-
-async function uploadImage() {
-    if (
-        selectedImages.value.length === 0 ||
-        uploadingImage.value
-    ) {
-        return
-    }
-
-    uploadingImage.value = true
-    errorMessage.value = ''
-    successMessage.value = ''
-
-    try {
-        await issueDiscussionService.uploadAttachment(
+const uploadAttachmentMutation = useMutation({
+    mutationFn: (files: File[]) =>
+        issueDiscussionService.uploadAttachment(
             props.issueUuid,
-            selectedImages.value,
-        )
+            files,
+        ),
 
+    onSuccess: async () => {
         selectedImages.value = []
 
         const input = document.getElementById(
@@ -249,20 +267,140 @@ async function uploadImage() {
 
         if (input) input.value = ''
 
-        successMessage.value =
-            'Photos uploaded successfully.'
+        actionError.value = ''
+        toast.success('Photo/s uploaded successfully')
 
-        await loadDiscussion()
-    } catch (error: unknown) {
-        errorMessage.value = getErrorMessage(error)
-    } finally {
-        uploadingImage.value = false
+        await queryClient.invalidateQueries({
+            queryKey: attachmentsKey.value,
+        })
+    },
+
+    onError: (error: unknown) => {
+        actionError.value = getErrorMessage(error)
+    },
+})
+
+const uploadingImage = computed(() =>
+    uploadAttachmentMutation.isPending.value
+)
+
+
+const uploadImage = () => {
+    if (
+        selectedImages.value.length === 0 ||
+        uploadingImage.value ||
+        !props.issueUuid
+    ) {
+        return
     }
+
+    actionError.value = ''
+
+    uploadAttachmentMutation.mutate([
+        ...selectedImages.value,
+    ])
 }
 
+// -----------------------------------------
+// Attachment image query
+// -----------------------------------------
 
-async function downloadAttachment(attachmentId: number) {
-    errorMessage.value = ''
+const imageBlobsQuery = useQuery({
+    queryKey: computed(() => [
+        'issueDiscussion',
+        'attachmentImages',
+        props.issueUuid,
+        attachments.value.map(item => item.id),
+    ]),
+
+    queryFn: async () => {
+        const results = await Promise.all(
+            attachments.value.map(async attachment => {
+                try {
+                    const url = issueDiscussionService.getDownloadUrl(
+                        props.issueUuid,
+                        attachment.id,
+                    )
+
+                    const response = await axios.get(url, {
+                        responseType: 'blob',
+                    })
+
+                    if (!response.data.type.startsWith('image/')) {
+                        return {
+                            id: attachment.id,
+                            blob: null,
+                        }
+                    }
+
+                    return {
+                        id: attachment.id,
+                        blob: response.data as Blob,
+                    }
+                } catch {
+                    return {
+                        id: attachment.id,
+                        blob: null,
+                    }
+                }
+            })
+        )
+
+        return results
+    },
+
+    enabled: computed(() =>
+        !!props.issueUuid && attachments.value.length > 0
+    ),
+
+    staleTime: 1000 * 60 * 5,
+})
+
+// -----------------------------------------
+// Convert image blobs to browser URLs
+// -----------------------------------------
+
+const clearImageUrls = () => {
+    Object.values(imageUrls.value).forEach(url => {
+        URL.revokeObjectURL(url)
+    })
+
+    imageUrls.value = {}
+    failedImages.value = []
+}
+
+watch(
+    () => imageBlobsQuery.data.value,
+    results => {
+        clearImageUrls()
+
+        if (!results) return
+
+        const urls: Record<number, string> = {}
+        const failures: number[] = []
+
+        results.forEach(result => {
+            if (result.blob) {
+                urls[result.id] = URL.createObjectURL(result.blob)
+            } else {
+                failures.push(result.id)
+            }
+        })
+
+        imageUrls.value = urls
+        failedImages.value = failures
+    },
+    { immediate: true },
+)
+
+// -----------------------------------------
+// Download attachment
+// -----------------------------------------
+
+
+
+const downloadAttachment = async (attachmentId: number) => {
+    actionError.value = ''
 
     try {
         const url = issueDiscussionService.getDownloadUrl(
@@ -278,7 +416,7 @@ async function downloadAttachment(attachmentId: number) {
         const link = document.createElement('a')
 
         const attachment = attachments.value.find(
-            (item) => item.id === attachmentId,
+            item => item.id === attachmentId
         )
 
         link.href = objectUrl
@@ -288,27 +426,36 @@ async function downloadAttachment(attachmentId: number) {
         link.click()
         link.remove()
 
-        // Allow the browser to begin downloading before cleanup.
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+        window.setTimeout(() => {
+            URL.revokeObjectURL(objectUrl)
+        }, 1000)
+
     } catch (error: unknown) {
-        errorMessage.value = getErrorMessage(error)
+        actionError.value = getErrorMessage(error)
     }
 }
 
-onMounted(loadDiscussion)
+// -----------------------------------------
+// Refresh discussion
+// -----------------------------------------
 
-watch(
-    () => props.issueUuid,
-    () => loadDiscussion(),
-)
+const refreshDiscussion = async () => {
+    await Promise.all([
+        refetchComments(),
+        refetchAttachments(),
+    ])
+}
+
+
+// -----------------------------------------
+// Cleanup
+// -----------------------------------------
 
 onBeforeUnmount(() => {
-    // Invalidate any pending requests for this component.
-    discussionRequestId++
-
     clearImageUrls()
 })
 </script>
+
 
 <template>
     <section class="space-y-8">
@@ -323,15 +470,6 @@ onBeforeUnmount(() => {
             <p>{{ errorMessage }}</p>
         </div>
 
-        <!-- Success message -->
-        <div v-if="successMessage" role="status"
-            class="flex items-start gap-3 rounded-xl border border-brand/30 bg-brand/10 p-4 text-sm text-brand">
-            <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-
-            <p>{{ successMessage }}</p>
-        </div>
 
         <!-- Discussion -->
         <div class="overflow-hidden rounded-2xl border border-border-subtle bg-bg-surface">
@@ -441,7 +579,7 @@ onBeforeUnmount(() => {
                                     (comment.user?.name ?? 'User')
                                         .trim()
                                         .charAt(0)
-                                .toUpperCase()
+                                        .toUpperCase()
                                 }}
                             </div>
 

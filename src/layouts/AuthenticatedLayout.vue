@@ -5,10 +5,13 @@ import { useAuthStore } from '@/stores/authStore'
 import AuthFooter from '@/components/layouts/authenticated/AuthFooter.vue'
 import AppBreadcrumb from '@/components/layouts/authenticated/AppBreadcrumb.vue'
 import ConfirmSignOutModal from '@/layouts/ConfirmSignOutModal.vue'
+import { useQueryClient } from '@tanstack/vue-query'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const isSidebarOpen = ref(false)
+
+const queryClient = useQueryClient()
 
 const navigation = [
     {
@@ -35,6 +38,7 @@ async function confirmSignOut() {
     try {
         // Call your existing logout function here.
         await authStore.logout()
+        await queryClient.clear()
 
         await router.push({ name: 'login' })
     } catch (error) {
@@ -44,11 +48,6 @@ async function confirmSignOut() {
     }
 }
 
-async function handleLogout() {
-    await authStore.logout()
-    isSidebarOpen.value = false
-    await router.push({ name: 'login' })
-}
 </script>
 
 <template>

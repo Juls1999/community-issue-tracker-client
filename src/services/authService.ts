@@ -10,6 +10,7 @@ export const registerUser = async (credentials: RegisterParams): Promise<void> =
   await axios.post<void>('/register', {
     name: credentials.name,
     email: credentials.email,
+    barangay_id: credentials.barangayId,
     password: credentials.password,
     password_confirmation: credentials.passwordConfirmation,
   })

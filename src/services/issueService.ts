@@ -1,51 +1,22 @@
+import type {
+  AddAttachmentPayload,
+  AddCommentPayload,
+  AssignStaffPayload,
+  Barangay,
+  CreateIssueTicketParams,
+  Issue,
+  IssueCategory,
+  IssueUpdatePayload,
+  PaginatedIssues,
+  UpdateStatusPayload,
+  User,
+} from '@/types'
 import axios from 'axios'
 
-export interface Issue {
-  uuid: string
-  title: string
-  description: string
-  status: 'pending' | 'in_progress' | 'resolved' | 'rejected'
-  priority: 'low' | 'medium' | 'high' | 'urgent'
-  created_at: string
-  updated_at: string
-  category?: {
-    id: number
-    name: string
-  } | null
-  barangay?: {
-    id: number
-    name: string
-  } | null
-}
-
-export interface IssueStatistics {
-  total: number
-  pending: number
-  in_progress: number
-  resolved: number
-  rejected: number
-}
-
-export interface PaginatedIssues {
-  data: Issue[]
-  links: {
-    first: string | null
-    last: string | null
-    prev: string | null
-    next: string | null
-  }
-  meta: {
-    current_page: number
-    last_page: number
-    per_page: number
-    total: number
-  }
-  statistics: IssueStatistics
-}
-
 export const issueService = {
+  // Fetches a paginated list of issues with optional search and status filters
   async getIssues(page = 1, search = '', status = 'all'): Promise<PaginatedIssues> {
-    const response = await axios.get('/api/issues', {
+    const { data } = await axios.get<PaginatedIssues>('/api/issues', {
       params: {
         page,
         search: search || undefined,
@@ -53,26 +24,62 @@ export const issueService = {
       },
     })
 
-    return response.data
+    return data
   },
 
+  // Fetches a single issue by its UUID
   async getIssue(uuid: string): Promise<Issue> {
-    const response = await axios.get(`/api/issues/${uuid}`)
+    const { data } = await axios.get<{ data: Issue }>(`/api/issues/${uuid}`)
 
-    return response.data.data
+    return data.data
   },
 
-  async createIssue(payload: {
-    title: string
-    description: string
-    issue_category_id: number
-    barangay_id?: number | null
-    priority?: 'low' | 'medium' | 'high' | 'urgent'
-    latitude?: number | null
-    longitude?: number | null
-  }): Promise<Issue> {
-    const response = await axios.post('/api/issues', payload)
+  // Creates a new issue with the provided payload
+  async createIssue(payload: CreateIssueTicketParams): Promise<Issue> {
+    const { data } = await axios.post<{ data: Issue }>('/api/issues', {
+      title: payload.title,
+      description: payload.description,
+      issue_category_id: payload.categoryId,
+      barangay_id: payload.barangayId,
+      priority: payload.priority,
+      // latitude: payload.latitude,
+      // longitude: payload.longitude,
+    })
 
-    return response.data.data
+    return data.data
   },
+
+  // Fetches a list of issue categories
+  async getIssueCategories(): Promise<IssueCategory[]> {
+    const { data } = await axios.get<IssueCategory[]>('/api/issue-categories')
+    return data
+  },
+
+  async updateIssue(uuid: string, payload: IssueUpdatePayload): Promise<void> {
+    await axios.patch<void>(`api/issues/${uuid}`, payload)
+  },
+
+  async assignStaff(uuid: string, payload: AssignStaffPayload): Promise<User> {
+    const { data } = await axios.post(`/api/issues/${uuid}/assign`, payload)
+    return data
+  },
+
+  async updateIssueStatus(uuid: string, payload: UpdateStatusPayload): Promise<void> {
+    await axios.patch(`/api/issues/${uuid}/status`, payload)
+  },
+
+  async addComment(uuid: string, payload: AddCommentPayload) {
+    await axios.post(`/api/issues/${uuid}/comments`, payload)
+  },
+
+  async addAttachment(uuid: string, payload: AddAttachmentPayload) {
+    await axios.post(`/api/issues/${uuid}/attachments`, payload)
+  },
+
+  async getBarangays(): Promise<Barangay[]> {
+    const { data } = await axios.get<Barangay[]>('/api/barangays')
+    return data
+  },
+
+  
 }

@@ -1,30 +1,30 @@
-```vue
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/authStore'
+import type { LoginParams } from '@/types'
+import { useMutation } from '@tanstack/vue-query'
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const authStore = useAuthStore()
 const router = useRouter()
 
-const formData = reactive({
+const formData = reactive<LoginParams>({
     email: '',
     password: '',
 })
 
 const showPassword = ref(false)
-const isLoading = ref(false)
 const loginError = ref('')
 
-const handleLogin = async () => {
-    if (isLoading.value) return
+const loginMutation = useMutation({
+    mutationFn: (credentials: LoginParams) =>
+        authStore.login(credentials),
 
-    isLoading.value = true
-    loginError.value = ''
+    onMutate: () => {
+        loginError.value = ''
+    },
 
-    try {
-        await authStore.login(formData)
-
+    onSuccess: async () => {
         const redirect = router.currentRoute.value.query.redirect
 
         await router.push(
@@ -32,14 +32,16 @@ const handleLogin = async () => {
                 ? redirect
                 : { name: 'resident-dashboard' },
         )
-    } catch {
+    },
+
+    onError: () => {
         formData.password = ''
+
         loginError.value =
             'Unable to sign in. Please check your credentials and try again.'
-    } finally {
-        isLoading.value = false
-    }
-}
+    },
+})
+
 </script>
 
 <template>
@@ -191,7 +193,7 @@ const handleLogin = async () => {
                 </div>
 
                 <!-- Login error -->
-                <div v-if="loginError" role="alert"
+                <div v-if="loginMutation.isError.value" role="alert"
                     class="mb-6 flex items-start gap-3 rounded-xl border border-error/30 bg-error-light/15 p-4">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="1.8" class="mt-0.5 h-5 w-5 shrink-0 text-error">
@@ -205,7 +207,7 @@ const handleLogin = async () => {
                 </div>
 
                 <!-- Login form -->
-                <form class="space-y-5" @submit.prevent="handleLogin">
+                <form class="space-y-5" @submit.prevent="loginMutation.mutate(formData)">
                     <!-- Email -->
                     <div>
                         <label for="email" class="mb-2 block text-sm font-semibold text-text-heading">
@@ -223,7 +225,8 @@ const handleLogin = async () => {
                             </div>
 
                             <input id="email" v-model="formData.email" type="email" name="email"
-                                placeholder="you@example.com" autocomplete="email" required :disabled="isLoading"
+                                placeholder="you@example.com" autocomplete="email" required
+                                :disabled="loginMutation.isPending.value"
                                 class="w-full rounded-xl border border-input-border bg-input-bg py-3.5 pl-12 pr-4 text-sm text-text-heading outline-none transition placeholder:text-text-muted/70 hover:border-border-strong focus:border-input-focus focus:ring-4 focus:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-60" />
                         </div>
                     </div>
@@ -248,11 +251,11 @@ const handleLogin = async () => {
 
                             <input id="password" v-model="formData.password" :type="showPassword ? 'text' : 'password'"
                                 name="password" placeholder="Enter your password" autocomplete="current-password"
-                                required :disabled="isLoading"
+                                required :disabled="loginMutation.isPending.value"
                                 class="w-full rounded-xl border border-input-border bg-input-bg py-3.5 pl-12 pr-12 text-sm text-text-heading outline-none transition placeholder:text-text-muted/70 hover:border-border-strong focus:border-input-focus focus:ring-4 focus:ring-brand/15 disabled:cursor-not-allowed disabled:opacity-60" />
 
                             <button type="button" :aria-label="showPassword ? 'Hide password' : 'Show password'"
-                                :aria-pressed="showPassword" :disabled="isLoading"
+                                :aria-pressed="showPassword" :disabled="loginMutation.isPending.value"
                                 class="absolute inset-y-0 right-0 flex items-center px-4 text-text-muted transition hover:text-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed"
                                 @click="showPassword = !showPassword">
                                 <svg v-if="!showPassword" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
@@ -275,20 +278,21 @@ const handleLogin = async () => {
                     </div>
 
                     <!-- Submit -->
-                    <button type="submit" :disabled="isLoading"
+                    <button type="submit" :disabled="loginMutation.isPending.value"
                         class="group mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3.5 font-semibold text-brand-foreground shadow-brand transition duration-200 hover:bg-brand-dark hover:text-white hover:shadow-md focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none">
-                        <svg v-if="isLoading" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2" class="h-5 w-5 animate-spin" aria-hidden="true">
+                        <svg v-if="loginMutation.isPending.value" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5 animate-spin"
+                            aria-hidden="true">
                             <circle cx="12" cy="12" r="9" stroke-opacity=".25" />
                             <path d="M21 12a9 9 0 0 0-9-9" stroke-linecap="round" />
                         </svg>
 
                         <span>
-                            {{ isLoading ? 'Signing in...' : 'Sign In' }}
+                            {{ loginMutation.isPending.value ? 'Signing in...' : 'Sign In' }}
                         </span>
 
-                        <svg v-if="!isLoading" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="1.8"
+                        <svg v-if="!loginMutation.isPending.value" xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                             class="h-5 w-5 transition-transform group-hover:translate-x-1" aria-hidden="true">
                             <path d="M5 12h14m-7-7 7 7-7 7" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>

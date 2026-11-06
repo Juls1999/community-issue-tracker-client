@@ -1,22 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import axios from 'axios'
 import { RouterLink } from 'vue-router'
-import { issueService, type Issue } from '@/services/issueService'
+import { issueService } from '@/services/issueService'
+import type { Issue } from '@/types'
+import { useQuery } from '@tanstack/vue-query'
+import { computed } from 'vue'
 
-interface IssueStatistics {
-    total: number
-    pending: number
-    in_progress: number
-    resolved: number
-    rejected: number
-}
+const { data: issues, error, isError, isFetching, refetch, isPending } = useQuery({
+    queryKey: ['issues'],
+    queryFn: async () => await issueService.getIssues(),
+    staleTime: 1000 * 60 * 30 //30 minutes
+})
 
-const issues = ref<Issue[]>([])
-const loading = ref(true)
-const errorMessage = ref('')
-
-const statistics = ref<IssueStatistics>({
+const statistics = computed(() => issues.value?.statistics ?? {
     total: 0,
     pending: 0,
     in_progress: 0,
@@ -24,7 +19,7 @@ const statistics = ref<IssueStatistics>({
     rejected: 0,
 })
 
-function statusLabel(status: Issue['status']) {
+const statusLabel = (status: Issue['status']) => {
     const labels: Record<Issue['status'], string> = {
         pending: 'Pending',
         in_progress: 'In progress',
@@ -35,7 +30,7 @@ function statusLabel(status: Issue['status']) {
     return labels[status]
 }
 
-function statusClass(status: Issue['status']) {
+const statusClass = (status: Issue['status']) => {
     const classes: Record<Issue['status'], string> = {
         pending: 'bg-amber-500/10 text-amber-400 ring-amber-500/20',
         in_progress: 'bg-blue-500/10 text-blue-400 ring-blue-500/20',
@@ -46,28 +41,9 @@ function statusClass(status: Issue['status']) {
     return classes[status]
 }
 
-async function loadIssues() {
-    loading.value = true
-    errorMessage.value = ''
 
-    try {
-        const result = await issueService.getIssues()
+const loadIssues = () => refetch()
 
-        issues.value = result.data
-        statistics.value = result.statistics
-
-    } catch (error: unknown) {
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-            errorMessage.value = 'Please sign in to view your reports.'
-        } else {
-            errorMessage.value = 'Unable to load your issues. Please try again.'
-        }
-    } finally {
-        loading.value = false
-    }
-}
-
-onMounted(loadIssues)
 </script>
 
 
@@ -129,7 +105,7 @@ onMounted(loadIssues)
         </header>
 
         <!-- Error message -->
-        <div v-if="errorMessage" role="alert"
+        <div v-if="isError" role="alert"
             class="flex items-start gap-3 rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-600">
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10">
                 <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
@@ -140,16 +116,16 @@ onMounted(loadIssues)
 
             <div class="min-w-0 flex-1">
                 <p class="font-semibold">Unable to load your dashboard</p>
-                <p class="mt-1 leading-5">{{ errorMessage }}</p>
+                <p class="mt-1 leading-5">{{ error }}</p>
 
                 <button type="button"
                     class="mt-3 inline-flex items-center gap-2 font-semibold text-red-600 transition hover:underline"
-                    @click="loadIssues">
+                    @click="loadIssues" :disabled="isFetching">
                     <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 7v5h-5M4 17v-5h5" />
                         <path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3" />
                     </svg>
-                    Try again
+                    {{ isFetching ? 'Retrying...' : 'Try again' }}
                 </button>
             </div>
         </div>
@@ -167,7 +143,7 @@ onMounted(loadIssues)
                 </div>
 
                 <span class="hidden text-xs text-text-muted sm:inline">
-                    {{ loading ? 'Updating...' : 'Current summary' }}
+                    {{ isPending ? 'Updating...' : 'Current summary' }}
                 </span>
             </div>
 
@@ -183,7 +159,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : statistics.total }}
+                                {{ isPending ? '—' : statistics.total }}
                             </p>
                         </div>
 
@@ -214,7 +190,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : statistics.pending }}
+                                {{ isPending ? '—' : statistics.pending }}
                             </p>
                         </div>
 
@@ -245,7 +221,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : statistics.in_progress }}
+                                {{ isPending ? '—' : statistics.in_progress }}
                             </p>
                         </div>
 
@@ -275,7 +251,7 @@ onMounted(loadIssues)
                             </p>
 
                             <p class="mt-3 text-3xl font-bold tracking-tight text-text-heading">
-                                {{ loading ? '—' : statistics.resolved }}
+                                {{ isPending ? '—' : statistics.resolved }}
                             </p>
                         </div>
 
@@ -335,7 +311,7 @@ onMounted(loadIssues)
             </div>
 
             <!-- Loading state -->
-            <div v-if="loading" class="space-y-4 p-5 sm:p-6" aria-live="polite" aria-label="Loading reports">
+            <div v-if="isPending" class="space-y-4 p-5 sm:p-6" aria-live="polite" aria-label="Loading reports">
                 <div v-for="n in 4" :key="n"
                     class="flex items-center gap-4 rounded-2xl border border-border-subtle p-4">
                     <div class="h-11 w-11 shrink-0 animate-pulse rounded-xl bg-bg-page" />
@@ -378,7 +354,7 @@ onMounted(loadIssues)
 
             <!-- Reports list -->
             <ul v-else class="divide-y divide-border-subtle">
-                <li v-for="issue in issues.slice(0, 5)" :key="issue.uuid"
+                <li v-for="issue in issues?.data.slice(0, 5)" :key="issue.uuid"
                     class="group relative transition-colors duration-200 hover:bg-bg-page/50">
                     <RouterLink :to="{ name: 'issueDiscussion', params: { uuid: issue.uuid } }"
                         class="flex flex-col gap-4 p-5 pl-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -406,7 +382,7 @@ onMounted(loadIssues)
 
                                     <span class="text-border-subtle">·</span>
                                     <span>
-                                        {{ new Date(issue.created_at).toLocaleString('en-PH', {
+                                        {{ new Date(issue.createdAt).toLocaleString('en-PH', {
                                             year: 'numeric',
                                             month: 'short',
                                             day: 'numeric',
@@ -444,10 +420,11 @@ onMounted(loadIssues)
             </ul>
 
             <!-- List footer -->
-            <div v-if="!loading && statistics.total > 0"
+            <div v-if="!isPending && statistics.total > 0"
                 class="flex flex-col gap-3 border-t border-border-subtle bg-bg-page/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p class="text-xs text-text-muted">
-                    Showing {{ Math.min(statistics.total, 5) }} of {{ statistics.total }} reports
+                    Showing {{ Math.min(statistics.total, 5) }}
+                    of {{ statistics.total }} reports
                 </p>
 
                 <RouterLink :to="{ name: 'resident-reports' }"

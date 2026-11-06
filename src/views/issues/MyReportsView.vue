@@ -1,42 +1,28 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { useQuery, keepPreviousData } from '@tanstack/vue-query'
 import axios from 'axios'
-import { RouterLink } from 'vue-router'
 import { issueService } from '@/services/issueService'
-import type {
-    Issue,
-    IssueStatistics,
-    PaginatedIssues
-} from '@/services/issueService'
 
-type ReportStatus =
-    | 'pending'
-    | 'in_progress'
-    | 'resolved'
-    | 'rejected'
-
-type ReportPriority = 'low' | 'medium' | 'high' | 'urgent'
+import type { Issue, IssueStatistics, PaginatedIssues } from '@/types'
 
 
-const reports = ref<Issue[]>([])
-const isLoading = ref(true)
-const errorMessage = ref('')
+// -----------------------------------------
+// Filters and pagination
+// -----------------------------------------
 
 const searchQuery = ref('')
 const selectedStatus = ref('all')
 
-const currentPage = ref(1)
-const lastPage = ref(1)
-const perPage = ref(10)
-const totalReports = ref(0)
+const debouncedSearch = ref('')
+const appliedStatus = ref('all')
 
-const statistics = ref<IssueStatistics>({
-    total: 0,
-    pending: 0,
-    in_progress: 0,
-    resolved: 0,
-    rejected: 0,
-})
+const currentPage = ref(1)
+const perPage = ref(10)
+
+// -----------------------------------------
+// Status options
+// -----------------------------------------
 
 const statuses = [
     { label: 'All Reports', value: 'all' },
@@ -46,57 +32,121 @@ const statuses = [
     { label: 'Rejected', value: 'rejected' },
 ]
 
+// -----------------------------------------
+// Debounced search and filtering
+// -----------------------------------------
+
 let searchTimeout: ReturnType<typeof setTimeout> | undefined
 
-async function fetchReports(page = 1) {
-    isLoading.value = true
-    errorMessage.value = ''
+watch(
+    [searchQuery, selectedStatus],
+    ([search, status]) => {
+        clearTimeout(searchTimeout)
 
-    try {
-        const result: PaginatedIssues = await issueService.getIssues(
-            page,
-            searchQuery.value.trim(),
-            selectedStatus.value
-        )
-
-        reports.value = result.data
-
-        // Laravel pagination metadata
-        currentPage.value = result.meta.current_page
-        lastPage.value = result.meta.last_page
-        perPage.value = result.meta.per_page
-        totalReports.value = result.meta.total
-
-        // Statistics across all accessible issues
-        statistics.value = result.statistics
-
-    } catch (error: unknown) {
-        console.error('Failed to load reports:', error)
-
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-            errorMessage.value = 'Please sign in to view your reports.'
-        } else {
-            errorMessage.value =
-                'We could not load your reports. Please try again.'
-        }
-    } finally {
-        isLoading.value = false
+        searchTimeout = setTimeout(() => {
+            currentPage.value = 1
+            debouncedSearch.value = search.trim()
+            appliedStatus.value = status
+        }, 350)
     }
-}
+)
+
+// -----------------------------------------
+// TanStack Query
+// -----------------------------------------
+
+
+const {
+    data: reports,
+    isPending,
+    isFetching,
+    isError,
+    error,
+    refetch,
+} = useQuery({
+    queryKey: [
+        'issues',
+        currentPage,
+        debouncedSearch,
+        appliedStatus,
+    ],
+
+    queryFn: async (): Promise<PaginatedIssues> => {
+        return await issueService.getIssues(
+            currentPage.value,
+            debouncedSearch.value,
+            appliedStatus.value
+        )
+    },
+
+    placeholderData: keepPreviousData,
+
+    staleTime: 1000 * 60 * 5,
+
+    refetchOnWindowFocus: false,
+})
+
+
+// -----------------------------------------
+// Computed API data
+// -----------------------------------------
+
+const reportList = computed(() => reports.value?.data ?? [])
+
+const statistics = computed<IssueStatistics>(() => ({
+    total: 0,
+    pending: 0,
+    in_progress: 0,
+    resolved: 0,
+    rejected: 0,
+    ...reports.value?.statistics,
+}))
+
+const lastPage = computed(() => {
+    return reports.value?.meta.last_page ?? 1
+})
+
+const totalReports = computed(() => {
+    return reports.value?.meta.total ?? 0
+})
+
+const paginationPerPage = computed(() => {
+    return reports.value?.meta.per_page ?? perPage.value
+})
+
+const errorMessage = computed(() => {
+    if (!isError.value) return ''
+
+    if (
+        axios.isAxiosError(error.value) &&
+        error.value.response?.status === 401
+    ) {
+        return 'Please sign in to view your reports.'
+    }
+
+    return 'We could not load your reports. Please try again.'
+})
+
+// -----------------------------------------
+// Pagination
+// -----------------------------------------
 
 function changePage(page: number) {
     if (
         page < 1 ||
         page > lastPage.value ||
         page === currentPage.value ||
-        isLoading.value
+        isFetching.value
     ) {
         return
     }
 
-    fetchReports(page)
+    currentPage.value = page
 }
 
+// -----------------------------------------
+// Formatting helpers
+// -----------------------------------------
 
 function formatStatus(status: string) {
     return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) =>
@@ -145,30 +195,16 @@ function categoryClasses(category?: Issue['category'] | null) {
         'Drainage and Flooding': 'bg-red-100 text-red-800 ring-red-200',
         'Road Damage': 'bg-lime-100 text-lime-800 ring-lime-200',
         'Public Facilities': 'bg-violet-100 text-violet-800 ring-violet-200',
-        'Other': 'bg-slate-100 text-slate-700 ring-slate-200',
+        Other: 'bg-slate-100 text-slate-700 ring-slate-200',
     }
 
     return colors[category.name] ??
         'bg-brand/10 text-brand ring-brand/20'
 }
 
-
-// Debounced server-side search and status filtering
-watch(
-    [searchQuery, selectedStatus],
-    () => {
-        clearTimeout(searchTimeout)
-
-        searchTimeout = setTimeout(() => {
-            fetchReports(1)
-        }, 350)
-    }
-)
-
-
-onMounted(() => {
-    fetchReports(1)
-})
+// -----------------------------------------
+// Cleanup
+// -----------------------------------------
 
 onUnmounted(() => {
     clearTimeout(searchTimeout)
@@ -367,7 +403,7 @@ onUnmounted(() => {
 
 
         <!-- Loading state -->
-        <div v-if="isLoading"
+        <div v-if="isPending"
             class="rounded-2xl border border-border-subtle bg-bg-surface px-6 py-16 text-center shadow-sm">
             <div class="mx-auto h-10 w-10 animate-spin rounded-full border-[3px] border-brand/15 border-t-brand" />
             <p class="mt-4 text-sm font-medium text-text-heading">
@@ -397,13 +433,13 @@ onUnmounted(() => {
 
             <button type="button"
                 class="mt-5 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground transition hover:opacity-90"
-                @click="fetchReports()">
+                @click="refetch()">
                 Try Again
             </button>
         </div>
 
         <!-- Empty state -->
-        <div v-else-if="reports.length === 0"
+        <div v-else-if="reportList.length === 0"
             class="rounded-2xl border border-border-subtle bg-bg-surface px-6 py-16 text-center shadow-sm">
             <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/10 text-brand">
                 <svg viewBox="0 0 24 24" class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -424,7 +460,7 @@ onUnmounted(() => {
                 }}
             </p>
 
-            <RouterLink v-if="reports.length === 0" :to="{ name: 'issue-create' }"
+            <RouterLink v-if="reportList.length === 0" :to="{ name: 'issue-create' }"
                 class="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-brand-foreground shadow-sm transition hover:opacity-90">
                 <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 5v14M5 12h14" />
@@ -453,7 +489,7 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <RouterLink v-for="report in reports" :key="report.uuid"
+            <RouterLink v-for="report in reportList" :key="report.uuid"
                 :to="{ name: 'issueDiscussion', params: { uuid: report.uuid } }"
                 class="group relative block overflow-hidden rounded-2xl border border-border-subtle bg-bg-surface shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/5">
                 <!-- Status accent -->
@@ -538,7 +574,7 @@ onUnmounted(() => {
                                     <rect x="3" y="5" width="18" height="16" rx="2" />
                                     <path d="M16 3v4M8 3v4M3 11h18" />
                                 </svg>
-                                {{ formatDate(report.created_at) }}
+                                {{ formatDate(report.createdAt) }}
                             </div>
 
                             <span class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand">
@@ -559,7 +595,8 @@ onUnmounted(() => {
                 <p class="text-sm text-text-muted">
                     Showing
                     <span class="font-semibold text-text-heading">
-                        {{ (currentPage - 1) * perPage + 1 }}–{{ Math.min(currentPage * perPage, totalReports) }}
+                        {{ (currentPage - 1) * paginationPerPage + 1 }}–{{ Math.min(currentPage * paginationPerPage,
+                            totalReports) }}
                     </span>
                     of
                     <span class="font-semibold text-text-heading">
@@ -569,7 +606,7 @@ onUnmounted(() => {
                 </p>
 
                 <div class="flex items-center gap-2">
-                    <button type="button" :disabled="currentPage === 1 || isLoading"
+                    <button type="button" :disabled="currentPage === 1 || isPending"
                         class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle px-3 py-2.5 text-sm font-medium text-text-body transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
                         @click="changePage(currentPage - 1)">
                         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
@@ -582,7 +619,7 @@ onUnmounted(() => {
                         {{ currentPage }} / {{ lastPage }}
                     </span>
 
-                    <button type="button" :disabled="currentPage >= lastPage || isLoading"
+                    <button type="button" :disabled="currentPage >= lastPage || isPending"
                         class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle px-3 py-2.5 text-sm font-medium text-text-body transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
                         @click="changePage(currentPage + 1)">
                         <span class="hidden sm:inline">Next</span>
