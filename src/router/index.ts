@@ -72,6 +72,12 @@ const router = createRouter({
           component: () => import('@/views/issues/MyReportsView.vue'),
           meta: { role: 'resident' },
         },
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('@/views/ProfileView.vue'),
+          meta: { role: 'resident' },
+        },
       ],
     },
   ],
@@ -88,6 +94,11 @@ const router = createRouter({
         el: to.hash,
         behavior: 'smooth',
       }
+    }
+
+    // Preserve viewport when navigating query parameters
+    if (to.path === from.path) {
+      return false
     }
 
     // Scroll to top for new page navigation

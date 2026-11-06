@@ -6,6 +6,7 @@ import type { RegisterParams } from '@/types'
 import { useMutation, useQuery } from '@tanstack/vue-query'
 import { useAuthStore } from '@/stores/authStore'
 import { issueService } from '@/services/issueService'
+import { Phone } from 'lucide-vue-next'
 
 
 const router = useRouter()
@@ -23,7 +24,10 @@ const { data: barangays, isLoading: loadingBarangays, isError: errorBarangays } 
 
 
 const form = reactive<RegisterParams>({
-    name: '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
+    phoneNumber: '',
     email: '',
     barangayId: '',
     password: '',
@@ -219,7 +223,7 @@ const registerMutation = useMutation({
                         <div>
                             <label for="name" class="mb-2 block text-sm font-medium
                                        text-text-heading">
-                                Full name
+                                First name
                             </label>
 
                             <div class="relative">
@@ -231,9 +235,9 @@ const registerMutation = useMutation({
                                     <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
                                 </svg>
 
-                                <input id="name" v-model="form.name" name="name" type="text" autocomplete="name"
-                                    placeholder="Enter your full name" required :aria-invalid="!!getFieldError('name')"
-                                    class="w-full rounded-xl border border-border-subtle
+                                <input tabindex="1" id="name" v-model="form.firstName" name="firstName" type="text"
+                                    autocomplete="firstname" placeholder="Enter your first name" required
+                                    :aria-invalid="!!getFieldError('firstName')" class="w-full rounded-xl border border-border-subtle
                                            bg-bg-page py-3 pl-11 pr-4
                                            text-text-heading outline-none
                                            transition placeholder:text-text-muted/70
@@ -241,9 +245,73 @@ const registerMutation = useMutation({
                                            focus:ring-brand/20" />
                             </div>
 
-                            <p v-if="getFieldError('name')" class="mt-1.5 text-sm text-red-600
+                            <p v-if="getFieldError('first_name')" class="mt-1.5 text-sm text-red-600
                                        dark:text-red-400">
-                                {{ getFieldError('name') }}
+                                {{ getFieldError('first_name') }}
+                            </p>
+                        </div>
+
+                        <!--Middle Name -->
+                        <div>
+                            <label for="name" class="mb-2 block text-sm font-medium
+                                       text-text-heading">
+                                Middle name
+                            </label>
+
+                            <div class="relative">
+                                <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5
+                                           top-1/2 h-5 w-5 -translate-y-1/2
+                                           text-text-muted" fill="none" stroke="currentColor" stroke-width="1.8"
+                                    aria-hidden="true">
+                                    <circle cx="12" cy="8" r="4" />
+                                    <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
+                                </svg>
+
+                                <input tabindex="2" id="name" v-model="form.middleName" name="middleName" type="text"
+                                    autocomplete="middleName" placeholder="Enter your middle name" required
+                                    :aria-invalid="!!getFieldError('middleName')" class="w-full rounded-xl border border-border-subtle
+                                           bg-bg-page py-3 pl-11 pr-4
+                                           text-text-heading outline-none
+                                           transition placeholder:text-text-muted/70
+                                           focus:border-brand focus:ring-2
+                                           focus:ring-brand/20" />
+                            </div>
+
+                            <p v-if="getFieldError('middle_name')" class="mt-1.5 text-sm text-red-600
+                                       dark:text-red-400">
+                                {{ getFieldError('middle_name') }}
+                            </p>
+                        </div>
+
+                        <!--Last Name -->
+                        <div>
+                            <label for="name" class="mb-2 block text-sm font-medium
+                                       text-text-heading">
+                                Last name
+                            </label>
+
+                            <div class="relative">
+                                <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5
+                                           top-1/2 h-5 w-5 -translate-y-1/2
+                                           text-text-muted" fill="none" stroke="currentColor" stroke-width="1.8"
+                                    aria-hidden="true">
+                                    <circle cx="12" cy="8" r="4" />
+                                    <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
+                                </svg>
+
+                                <input tabindex="3" id="name" v-model="form.lastName" name="lastName" type="text"
+                                    autocomplete="lastName" placeholder="Enter your last name" required
+                                    :aria-invalid="!!getFieldError('lastName')" class="w-full rounded-xl border border-border-subtle
+                                           bg-bg-page py-3 pl-11 pr-4
+                                           text-text-heading outline-none
+                                           transition placeholder:text-text-muted/70
+                                           focus:border-brand focus:ring-2
+                                           focus:ring-brand/20" />
+                            </div>
+
+                            <p v-if="getFieldError('last_name')" class="mt-1.5 text-sm text-red-600
+                                       dark:text-red-400">
+                                {{ getFieldError('last_name') }}
                             </p>
                         </div>
 
@@ -263,9 +331,9 @@ const registerMutation = useMutation({
                                     <path d="m3 7 9 6 9-6" />
                                 </svg>
 
-                                <input id="email" v-model="form.email" name="email" type="email" autocomplete="email"
-                                    placeholder="you@example.com" required :aria-invalid="!!getFieldError('email')"
-                                    class="w-full rounded-xl border border-border-subtle
+                                <input tabindex="4" id="email" v-model="form.email" name="email" type="email"
+                                    autocomplete="email" placeholder="you@example.com" required
+                                    :aria-invalid="!!getFieldError('email')" class="w-full rounded-xl border border-border-subtle
                                            bg-bg-page py-3 pl-11 pr-4
                                            text-text-heading outline-none
                                            transition placeholder:text-text-muted/70
@@ -279,6 +347,35 @@ const registerMutation = useMutation({
                             </p>
                         </div>
 
+                        <!-- Phone Number -->
+                        <div>
+                            <label for="name" class="mb-2 block text-sm font-medium
+                                       text-text-heading">
+                                Phone number
+                            </label>
+
+                            <div class="relative">
+                                <Phone class="pointer-events-none absolute left-3.5
+                                           top-1/2 h-5 w-5 -translate-y-1/2
+                                           text-text-muted" fill="none" stroke="currentColor" stroke-width="1.8"
+                                    aria-hidden="true" />
+
+                                <input tabindex="5" id="name" v-model="form.phoneNumber" name="phoneNumber" type="text"
+                                    autocomplete="phoneNumber" placeholder="Enter your phone number" required
+                                    :aria-invalid="!!getFieldError('phoneNumber')" class="w-full rounded-xl border border-border-subtle
+                                           bg-bg-page py-3 pl-11 pr-4
+                                           text-text-heading outline-none
+                                           transition placeholder:text-text-muted/70
+                                           focus:border-brand focus:ring-2
+                                           focus:ring-brand/20" />
+                            </div>
+
+                            <p v-if="getFieldError('phone_number')" class="mt-1.5 text-sm text-red-600
+                                       dark:text-red-400">
+                                {{ getFieldError('phone_number') }}
+                            </p>
+                        </div>
+
                         <!-- Barangay -->
                         <div>
                             <label for="barangayId" class="mb-2 block text-sm font-medium
@@ -286,7 +383,7 @@ const registerMutation = useMutation({
                                 Barangay
                             </label>
 
-                            <select id="barangayId" v-model="form.barangayId" name="barangayId" required
+                            <select tabindex="6" id="barangayId" v-model="form.barangayId" name="barangayId" required
                                 :disabled="loadingBarangays || errorBarangays || !barangays?.length"
                                 :aria-invalid="!!getFieldError('barangayId')" class="w-full rounded-xl border border-border-subtle
                                 bg-bg-page px-4 py-3 text-text-heading
@@ -312,9 +409,9 @@ const registerMutation = useMutation({
                                 </option>
                             </select>
 
-                            <p v-if="getFieldError('barangayId')" class="mt-1.5 text-sm text-red-600
+                            <p v-if="getFieldError('barangay_id')" class="mt-1.5 text-sm text-red-600
                                        dark:text-red-400">
-                                {{ getFieldError('barangayId') }}
+                                {{ getFieldError('barangay_id') }}
                             </p>
                         </div>
 
@@ -334,7 +431,7 @@ const registerMutation = useMutation({
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                                 </svg>
 
-                                <input id="password" v-model="form.password" name="password"
+                                <input tabindex="7" id="password" v-model="form.password" name="password"
                                     :type="showPassword ? 'text' : 'password'" autocomplete="new-password"
                                     placeholder="Create a password" required :aria-invalid="!!getFieldError('password')"
                                     class="w-full rounded-xl border border-border-subtle
@@ -388,7 +485,7 @@ const registerMutation = useMutation({
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                                 </svg>
 
-                                <input id="passwordConfirmation" v-model="form.passwordConfirmation"
+                                <input tabindex="7" id="passwordConfirmation" v-model="form.passwordConfirmation"
                                     name="password_confirmation" :type="showPasswordConfirmation ? 'text' : 'password'"
                                     autocomplete="new-password" placeholder="Re-enter your password" required
                                     :aria-invalid="!!getFieldError('password_confirmation')" class="w-full rounded-xl border border-border-subtle
@@ -428,7 +525,7 @@ const registerMutation = useMutation({
                             </p>
                         </div>
 
-                        <button type="submit"
+                        <button tabindex="8" type="submit"
                             :disabled="registerMutation.isPending.value || loadingBarangays || !barangays" class="flex w-full items-center justify-center gap-2
                                    rounded-xl bg-brand px-5 py-3.5
                                    font-semibold text-brand-foreground

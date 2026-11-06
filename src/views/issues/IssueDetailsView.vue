@@ -235,42 +235,8 @@ const {
     )
 
     // Update my reports page issues cache for all status
-    queryClient.setQueryData<IssuesResponse>(
-      ['issues', 1, '', 'all'],
-      (oldData) => {
-        if (!oldData || !updatedIssue) return oldData
-
-        return {
-          ...oldData,
-          data: oldData.data.map((item) =>
-            item.uuid === issueUuid.value
-              ? updatedIssue
-              : item
-          ),
-        }
-      }
-    )
-
-    // Update my reports page issues cache for pending status
-    queryClient.setQueryData<IssuesResponse>(
-      ['issues', 1, '', 'pending'],
-      (oldData) => {
-        if (!oldData || !updatedIssue) return oldData
-
-        return {
-          ...oldData,
-          data: oldData.data.map((item) =>
-            item.uuid === issueUuid.value
-              ? updatedIssue
-              : item
-          ),
-        }
-      }
-    )
-
-    // Update my reports page issues cache for in_progress status
-    queryClient.setQueryData<IssuesResponse>(
-      ['issues', 1, '', 'in_progress'],
+    queryClient.setQueriesData<IssuesResponse>(
+      { queryKey: ['issues', 'list'] },
       (oldData) => {
         if (!oldData || !updatedIssue) return oldData
 

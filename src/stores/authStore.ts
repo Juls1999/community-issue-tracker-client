@@ -1,4 +1,4 @@
-import { getAuthenticatedUser, loginUser, logoutUser, registerUser } from '@/services/authService'
+import { authService } from '@/services/authService'
 import type { LoginParams, RegisterParams, User } from '@/types'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
@@ -9,7 +9,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const getUser = async () => {
     try {
-      const data = await getAuthenticatedUser()
+      const data = await authService.getAuthenticatedUser()
       user.value = data
     } catch (err) {
       console.log(err, 'error getting user')
@@ -18,7 +18,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const register = async (credentials: RegisterParams) => {
     try {
-      await registerUser(credentials)
+      await authService.registerUser(credentials)
       await getUser()
     } catch (err) {
       console.log(err, 'error registering user')
@@ -28,7 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const login = async (credentials: LoginParams) => {
     try {
-      await loginUser(credentials)
+      await authService.loginUser(credentials)
       await getUser()
     } catch (err) {
       console.log(err, 'Login Error')
@@ -37,7 +37,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const logout = async () => {
-    await logoutUser().then(() => (user.value = null))
+    await authService.logoutUser().then(() => (user.value = null))
   }
 
   return {

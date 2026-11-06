@@ -6,6 +6,7 @@ import type {
   CreateIssueTicketParams,
   Issue,
   IssueCategory,
+  IssueListParams,
   IssueUpdatePayload,
   PaginatedIssues,
   UpdateStatusPayload,
@@ -15,16 +16,13 @@ import axios from 'axios'
 
 export const issueService = {
   // Fetches a paginated list of issues with optional search and status filters
-  async getIssues(page = 1, search = '', status = 'all'): Promise<PaginatedIssues> {
-    const { data } = await axios.get<PaginatedIssues>('/api/issues', {
-      params: {
-        page,
-        search: search || undefined,
-        status: status === 'all' ? undefined : status,
-      },
+
+  async getIssues(params: Partial<IssueListParams> = {}): Promise<PaginatedIssues> {
+    const response = await axios.get('/api/issues', {
+      params,
     })
 
-    return data
+    return response.data
   },
 
   // Fetches a single issue by its UUID
@@ -80,6 +78,4 @@ export const issueService = {
     const { data } = await axios.get<Barangay[]>('/api/barangays')
     return data
   },
-
-  
 }

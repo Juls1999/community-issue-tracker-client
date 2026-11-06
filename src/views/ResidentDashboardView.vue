@@ -4,11 +4,12 @@ import { issueService } from '@/services/issueService'
 import type { Issue } from '@/types'
 import { useQuery } from '@tanstack/vue-query'
 import { computed } from 'vue'
+import { queryKeys } from '@/constants/queryKeys'
 
 const { data: issues, error, isError, isFetching, refetch, isPending } = useQuery({
-    queryKey: ['issues'],
+    queryKey: queryKeys.issues.all,
     queryFn: async () => await issueService.getIssues(),
-    staleTime: 1000 * 60 * 30 //30 minutes
+    staleTime: Infinity
 })
 
 const statistics = computed(() => issues.value?.statistics ?? {

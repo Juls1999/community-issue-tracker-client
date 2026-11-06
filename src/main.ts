@@ -11,6 +11,7 @@ import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
 
 import Vue3Toastify, { toast } from 'vue3-toastify'
 import 'vue3-toastify/dist/index.css'
+import { profileService } from './services/profileService.ts'
 
 axios.defaults.baseURL = import.meta.env.VITE_API_URL
 axios.defaults.withCredentials = true
@@ -31,6 +32,7 @@ app.use(Vue3Toastify, {
 })
 
 await authStore.getUser()
+
 
 const queryClient = new QueryClient({
   defaultOptions: {

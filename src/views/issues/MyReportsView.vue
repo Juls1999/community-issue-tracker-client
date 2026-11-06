@@ -1,214 +1,296 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useQuery, keepPreviousData } from '@tanstack/vue-query'
-import axios from 'axios'
+
 import { issueService } from '@/services/issueService'
+import { queryKeys } from '@/constants/queryKeys'
 
-import type { Issue, IssueStatistics, PaginatedIssues } from '@/types'
+type ReportStatus = 'pending' | 'in_progress' | 'resolved' | 'rejected'
 
+interface Category {
+    id: number
+    name: string
+}
 
-// -----------------------------------------
-// Filters and pagination
-// -----------------------------------------
-
-const searchQuery = ref('')
-const selectedStatus = ref('all')
-
-const debouncedSearch = ref('')
-const appliedStatus = ref('all')
-
-const currentPage = ref(1)
-const perPage = ref(10)
-
-// -----------------------------------------
-// Status options
-// -----------------------------------------
+interface IssueReport {
+    uuid: string
+    title: string
+    description: string
+    status: ReportStatus
+    priority: 'low' | 'medium' | 'high' | 'urgent'
+    createdAt: string
+    updatedAt: string
+    category?: Category | null
+    barangay?: { id: number; name: string } | null
+}
 
 const statuses = [
-    { label: 'All Reports', value: 'all' },
+    { label: 'All Statuses', value: 'all' },
     { label: 'Pending', value: 'pending' },
     { label: 'In Progress', value: 'in_progress' },
     { label: 'Resolved', value: 'resolved' },
     { label: 'Rejected', value: 'rejected' },
 ]
 
+const route = useRoute()
+const router = useRouter()
+
+const defaults = {
+    page: 1,
+    per_page: 10,
+    search: '',
+    status: 'all',
+    priority: 'all',
+    category: 'all',
+    sort_by: 'created_at',
+    sort_direction: 'desc',
+}
+
+const getQueryValue = (value: unknown, fallback: string): string => {
+    return typeof value === 'string' ? value : fallback
+}
+
 // -----------------------------------------
-// Debounced search and filtering
+// URL filters
 // -----------------------------------------
+
+const filters = computed(() => {
+    const page = Number(route.query.page)
+    const perPage = Number(route.query.per_page)
+
+    return {
+        page:
+            Number.isInteger(page) && page > 0
+                ? page
+                : defaults.page,
+
+        per_page:
+            Number.isInteger(perPage) && perPage >= 1 && perPage <= 100
+                ? perPage
+                : defaults.per_page,
+
+        search: getQueryValue(route.query.search, defaults.search).trim(),
+        status: getQueryValue(route.query.status, defaults.status),
+        priority: getQueryValue(route.query.priority, defaults.priority),
+        category: getQueryValue(route.query.category, defaults.category),
+        sort_by: getQueryValue(route.query.sort_by, defaults.sort_by),
+        sort_direction: getQueryValue(
+            route.query.sort_direction,
+            defaults.sort_direction,
+        ),
+    }
+})
+
+// -----------------------------------------
+// Search
+// -----------------------------------------
+
+const searchDraft = ref(filters.value.search)
 
 let searchTimeout: ReturnType<typeof setTimeout> | undefined
 
 watch(
-    [searchQuery, selectedStatus],
-    ([search, status]) => {
-        clearTimeout(searchTimeout)
-
-        searchTimeout = setTimeout(() => {
-            currentPage.value = 1
-            debouncedSearch.value = search.trim()
-            appliedStatus.value = status
-        }, 350)
-    }
+    () => route.query.search,
+    () => {
+        searchDraft.value = filters.value.search
+    },
 )
 
+const updateFilters = (
+    changes: Partial<typeof defaults>,
+    navigation: 'push' | 'replace' = 'replace',
+) => {
+    const next = {
+        ...filters.value,
+        ...changes,
+    }
+
+    const query = { ...route.query }
+
+    Object.entries(next).forEach(([key, value]) => {
+        if (value === defaults[key as keyof typeof defaults]) {
+            delete query[key]
+        } else {
+            query[key] = String(value)
+        }
+    })
+
+    router[navigation]({ query })
+}
+
+watch(searchDraft, (value) => {
+    if (searchTimeout) clearTimeout(searchTimeout)
+
+    searchTimeout = setTimeout(() => {
+        updateFilters({
+            search: value.trim(),
+            page: 1,
+        })
+    }, 400)
+})
+
+onUnmounted(() => {
+    if (searchTimeout) clearTimeout(searchTimeout)
+})
+
 // -----------------------------------------
-// TanStack Query
+// Filter actions
 // -----------------------------------------
 
+const changeStatus = (value: string) => {
+    updateFilters({ status: value, page: 1 })
+}
+
+function changePriority(priority: string) {
+    updateFilters({
+        priority,
+        page: 1,
+    })
+}
+
+const changePerPage = (value: string | number) => {
+    updateFilters({
+        per_page: Number(value),
+        page: 1,
+    })
+}
+
+function changeSorting(sortBy: string, sortDirection: string) {
+    updateFilters({
+        sort_by: sortBy,
+        sort_direction: sortDirection,
+        page: 1,
+    })
+}
+
+const goToPage = (page: number) => {
+    if (page < 1 || page > totalPages.value) return
+
+    updateFilters({ page }, 'push')
+}
+
+const resetFilters = () => {
+    searchDraft.value = ''
+    router.replace({ query: {} })
+}
+
+// -----------------------------------------
+// API parameters
+// -----------------------------------------
+
+const apiParams = computed(() => {
+    const current = filters.value
+
+    return {
+        page: current.page,
+        per_page: current.per_page,
+        search: current.search || undefined,
+        status: current.status === 'all' ? undefined : current.status,
+        priority: current.priority === 'all' ? undefined : current.priority,
+        category: current.category === 'all' ? undefined : current.category,
+        sort_by: current.sort_by,
+        sort_direction: current.sort_direction,
+    }
+})
+
+// -----------------------------------------
+// TanStack Vue Query
+// -----------------------------------------
 
 const {
-    data: reports,
+    data: reportsResponse,
     isPending,
-    isFetching,
     isError,
+    isFetching,
     error,
     refetch,
 } = useQuery({
-    queryKey: [
-        'issues',
-        currentPage,
-        debouncedSearch,
-        appliedStatus,
-    ],
-
-    queryFn: async (): Promise<PaginatedIssues> => {
-        return await issueService.getIssues(
-            currentPage.value,
-            debouncedSearch.value,
-            appliedStatus.value
-        )
-    },
-
+    queryKey: computed(() => ['issues', 'list', filters.value]),
+    queryFn: () => issueService.getIssues(apiParams.value),
     placeholderData: keepPreviousData,
-
-    staleTime: 1000 * 60 * 5,
-
-    refetchOnWindowFocus: false,
+    staleTime: Infinity,
 })
 
+const reports = computed<IssueReport[]>(
+    () => (reportsResponse.value?.data ?? []) as IssueReport[],
+)
+
+const pagination = computed(() => reportsResponse.value?.meta)
+
+const totalPages = computed(() => pagination.value?.last_page ?? 1)
+
+const totalReports = computed(() => pagination.value?.total ?? 0)
+
+const currentPage = computed(() => filters.value.page)
+
+const perPage = computed(() => filters.value.per_page)
+
+// Laravel already handles filtering and pagination.
+const reportList = reports
 
 // -----------------------------------------
-// Computed API data
+// Summary counts
 // -----------------------------------------
 
-const reportList = computed(() => reports.value?.data ?? [])
-
-const statistics = computed<IssueStatistics>(() => ({
-    total: 0,
-    pending: 0,
-    in_progress: 0,
-    resolved: 0,
-    rejected: 0,
-    ...reports.value?.statistics,
-}))
-
-const lastPage = computed(() => {
-    return reports.value?.meta.last_page ?? 1
-})
-
-const totalReports = computed(() => {
-    return reports.value?.meta.total ?? 0
-})
-
-const paginationPerPage = computed(() => {
-    return reports.value?.meta.per_page ?? perPage.value
-})
-
-const errorMessage = computed(() => {
-    if (!isError.value) return ''
-
-    if (
-        axios.isAxiosError(error.value) &&
-        error.value.response?.status === 401
-    ) {
-        return 'Please sign in to view your reports.'
+interface StatusCounts {
+    total: number
+    pending: number
+    in_progress: number
+    resolved: number
+    rejected: number
+}
+const statusCounts = computed<StatusCounts>(() => {
+    return reportsResponse.value?.statistics ?? {
+        total: 0,
+        pending: 0,
+        in_progress: 0,
+        resolved: 0,
+        rejected: 0,
     }
-
-    return 'We could not load your reports. Please try again.'
 })
 
 // -----------------------------------------
-// Pagination
+// Presentation helpers
 // -----------------------------------------
 
-function changePage(page: number) {
-    if (
-        page < 1 ||
-        page > lastPage.value ||
-        page === currentPage.value ||
-        isFetching.value
-    ) {
-        return
-    }
+const errorMessage = computed(() =>
+    error.value instanceof Error
+        ? error.value.message
+        : 'Unable to load your reports. Please try again.',
+)
 
-    currentPage.value = page
+const formatStatus = (status: string) => {
+    return status
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
 }
 
-// -----------------------------------------
-// Formatting helpers
-// -----------------------------------------
-
-function formatStatus(status: string) {
-    return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) =>
-        letter.toUpperCase(),
-    )
-}
-
-function statusClasses(status: string) {
-    const styles: Record<string, string> = {
-        pending: 'bg-amber-100 text-amber-800',
-        in_progress: 'bg-blue-100 text-blue-800',
-        resolved: 'bg-emerald-100 text-emerald-800',
+const statusClasses = (status: string) => {
+    const classes: Record<string, string> = {
+        pending: 'bg-yellow-100 text-yellow-700',
+        in_progress: 'bg-blue-100 text-blue-700',
+        resolved: 'bg-green-100 text-green-700',
         rejected: 'bg-red-100 text-red-700',
     }
 
-    return styles[status] ?? 'bg-bg-page text-text-muted'
+    return classes[status] ?? 'bg-gray-100 text-gray-700'
 }
 
-function formatDate(date: string) {
-    if (!date) return 'Date unavailable'
+const categoryClasses = (category?: Category | null) => {
+    return category
+        ? 'bg-brand/10 text-brand ring-brand/20'
+        : 'bg-gray-100 text-gray-700 ring-gray-200'
+}
 
-    const parsedDate = new Date(date)
-
-    if (Number.isNaN(parsedDate.getTime())) {
-        return 'Date unavailable'
-    }
-
-    return new Intl.DateTimeFormat('en-PH', {
+const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString('en-PH', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-    }).format(parsedDate)
+    })
 }
-
-function categoryClasses(category?: Issue['category'] | null) {
-    if (!category) {
-        return 'bg-bg-page text-text-muted ring-border-subtle'
-    }
-
-    const colors: Record<string, string> = {
-        'Waste Management': 'bg-blue-100 text-blue-800 ring-blue-200',
-        'Street Lighting': 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-        'Drainage and Flooding': 'bg-red-100 text-red-800 ring-red-200',
-        'Road Damage': 'bg-lime-100 text-lime-800 ring-lime-200',
-        'Public Facilities': 'bg-violet-100 text-violet-800 ring-violet-200',
-        Other: 'bg-slate-100 text-slate-700 ring-slate-200',
-    }
-
-    return colors[category.name] ??
-        'bg-brand/10 text-brand ring-brand/20'
-}
-
-// -----------------------------------------
-// Cleanup
-// -----------------------------------------
-
-onUnmounted(() => {
-    clearTimeout(searchTimeout)
-})
 </script>
 
 
@@ -253,38 +335,38 @@ onUnmounted(() => {
             <button v-for="item in [
                 {
                     label: 'Total Reports',
-                    value: statistics.total,
+                    value: statusCounts.total,
                     key: 'all',
                     description: 'All submitted reports',
                     icon: 'all',
                 },
                 {
                     label: 'Pending',
-                    value: statistics.pending,
+                    value: statusCounts.pending,
                     key: 'pending',
                     description: 'Awaiting review',
                     icon: 'pending',
                 },
                 {
                     label: 'In Progress',
-                    value: statistics.in_progress,
+                    value: statusCounts.in_progress,
                     key: 'in_progress',
                     description: 'Being addressed',
                     icon: 'progress',
                 },
                 {
                     label: 'Resolved',
-                    value: statistics.resolved,
+                    value: statusCounts.resolved,
                     key: 'resolved',
                     description: 'Successfully completed',
                     icon: 'resolved',
                 },
             ]" :key="item.key" type="button"
                 class="group relative overflow-hidden rounded-2xl border bg-bg-surface p-5 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md"
-                :class="selectedStatus === item.key
+                :class="filters.status === item.key
                     ? 'border-brand ring-2 ring-brand/15'
                     : 'border-border-subtle hover:border-brand/40'
-                    " @click="selectedStatus = item.key">
+                    " @click="changeStatus(item.key)">
                 <div class="flex items-start justify-between gap-4">
                     <div>
                         <p class="text-sm font-medium text-text-muted">
@@ -341,7 +423,7 @@ onUnmounted(() => {
                     </svg>
                 </div>
 
-                <div v-if="selectedStatus === item.key" class="absolute inset-x-0 bottom-0 h-1 bg-brand" />
+                <div v-if="filters.status === item.key" class="absolute inset-x-0 bottom-0 h-1 bg-brand" />
             </button>
         </div>
 
@@ -358,14 +440,14 @@ onUnmounted(() => {
                         <path d="m20 20-4-4" />
                     </svg>
 
-                    <input v-model="searchQuery" type="search"
+                    <input v-model="searchDraft" type="search"
                         placeholder="Search reports by title, description, category, or ID..."
                         class="w-full rounded-xl border border-border-subtle bg-bg-page py-3.5 pl-12 pr-4 text-sm text-text-heading outline-none transition placeholder:text-text-muted focus:border-brand focus:ring-4 focus:ring-brand/10" />
                 </div>
 
                 <!-- Status filter -->
                 <div class="relative md:w-56">
-                    <select v-model="selectedStatus"
+                    <select :value="filters.status" @change="changeStatus(($event.target as HTMLSelectElement).value)"
                         class="w-full appearance-none rounded-xl border border-border-subtle bg-bg-page px-4 py-3.5 pr-10 text-sm font-medium text-text-heading outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10">
                         <option v-for="status in statuses" :key="status.value" :value="status.value">
                             {{ status.label }}
@@ -386,16 +468,15 @@ onUnmounted(() => {
                     <span class="font-semibold text-text-heading">
                         {{ totalReports }}
                     </span>
-                    {{ totalReports === 1 ? 'report' : 'reports' }} found
+                    {{ totalReports === 1 ? 'report' : 'reports' }} founds
 
-                    <span v-if="searchQuery.trim()">
-                        matching "{{ searchQuery.trim() }}"
+                    <span v-if="searchDraft.trim()">
+                        matching "{{ searchDraft.trim() }}"
                     </span>
                 </p>
 
-                <button v-if="searchQuery || selectedStatus !== 'all'" type="button"
-                    class="text-xs font-semibold text-brand transition hover:underline"
-                    @click="searchQuery = ''; selectedStatus = 'all'">
+                <button v-if="searchDraft || filters.status !== 'all'" type="button"
+                    class="text-xs font-semibold text-brand transition hover:underline" @click="resetFilters">
                     Clear filters
                 </button>
             </div>
@@ -415,7 +496,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Error state -->
-        <div v-else-if="errorMessage"
+        <div v-else-if="isError"
             class="rounded-2xl border border-red-200 bg-bg-surface px-6 py-12 text-center shadow-sm">
             <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-red-600">
                 <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -428,18 +509,25 @@ onUnmounted(() => {
                 Unable to load reports
             </p>
             <p class="mt-2 text-sm text-text-muted">
-                {{ errorMessage }}
+                {{ errorMessage ? 'Invalid search result, Please try again' : '' }}
             </p>
 
-            <button type="button"
-                class="mt-5 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground transition hover:opacity-90"
-                @click="refetch()">
-                Try Again
-            </button>
+            <div class="space-x-2">
+                <button type="button"
+                    class="mt-6 rounded-xl border border-border-subtle px-5 py-2.5 text-sm font-semibold text-text-body transition hover:border-brand hover:text-brand"
+                    @click="resetFilters()">
+                    Clear filters
+                </button>
+                <button type="button"
+                    class="mt-5 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground transition hover:opacity-90"
+                    @click="refetch()">
+                    Try Again
+                </button>
+            </div>
         </div>
 
         <!-- Empty state -->
-        <div v-else-if="reportList.length === 0"
+        <div v-else-if="!isFetching && reportList.length === 0"
             class="rounded-2xl border border-border-subtle bg-bg-surface px-6 py-16 text-center shadow-sm">
             <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/10 text-brand">
                 <svg viewBox="0 0 24 24" class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -449,12 +537,12 @@ onUnmounted(() => {
             </div>
 
             <h2 class="mt-5 text-xl font-bold text-text-heading">
-                {{ statistics.total === 0 ? 'No reports yet' : 'No matching reports' }}
+                {{ totalReports === 0 ? 'No reports yet' : 'No matching reports' }}
             </h2>
 
             <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-text-muted">
                 {{
-                    statistics.total === 0
+                    totalReports === 0
                         ? 'Your submitted community issues will appear here so you can track their progress.'
                         : 'Try another search term or choose a different status to find your report.'
                 }}
@@ -470,7 +558,7 @@ onUnmounted(() => {
 
             <button v-else type="button"
                 class="mt-6 rounded-xl border border-border-subtle px-5 py-2.5 text-sm font-semibold text-text-body transition hover:border-brand hover:text-brand"
-                @click="searchQuery = ''; selectedStatus = 'all'">
+                @click="searchDraft = ''; filters.status = 'all'">
                 Clear filters
             </button>
         </div>
@@ -488,6 +576,111 @@ onUnmounted(() => {
                     </p>
                 </div>
             </div>
+
+            <!-- Pagination -->
+            <section v-if="!isPending && totalReports > 0"
+                class="flex flex-col justify-between gap-4 border-t border-border-subtle pt-5 sm:flex-row sm:items-center">
+                <!-- Results Information -->
+
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <!-- Pagination information and controls -->
+                    <div class="flex flex-wrap items-center gap-3 text-sm text-text-muted">
+                        <span>
+                            Showing
+                            <strong class="text-text-heading">
+                                {{ pagination?.from ?? 0 }}–{{ pagination?.to ?? 0 }}
+                            </strong>
+                            of
+                            <strong class="text-text-heading">
+                                {{ totalReports }}
+                            </strong>
+                            reports
+                        </span>
+
+                        <!-- Rows per page -->
+                        <div class="flex items-center gap-2">
+                            <label for="perPage" class="text-xs">Rows:</label>
+
+                            <select id="perPage" :value="perPage"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changePerPage(($event.target as HTMLSelectElement).value)">
+                                <option :value="5">5</option>
+                                <option :value="10">10</option>
+                                <option :value="20">20</option>
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                            </select>
+                        </div>
+
+                        <!-- Sort field -->
+                        <div class="flex items-center gap-2">
+                            <label for="sortBy" class="text-xs">Sort by:</label>
+
+                            <select id="sortBy" :value="filters.sort_by"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changeSorting(($event.target as HTMLSelectElement).value, filters.sort_direction)">
+                                <option value="created_at">Date created</option>
+                                <option value="updated_at">Last updated</option>
+                                <option value="title">Title</option>
+                                <option value="priority">Priority</option>
+                                <option value="status">Status</option>
+                            </select>
+                        </div>
+
+                        <!-- Sort direction -->
+                        <div class="flex items-center gap-2">
+                            <label for="sortDirection" class="text-xs">Order:</label>
+
+                            <select id="sortDirection" :value="filters.sort_direction"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changeSorting(filters.sort_by, ($event.target as HTMLSelectElement).value)">
+                                <option value="desc">Desc</option>
+                                <option value="asc">Asc</option>
+                            </select>
+                        </div>
+
+                        <!-- Priority filter -->
+                        <div class="flex items-center gap-2">
+                            <label for="priority" class="text-xs">Priority:</label>
+
+                            <select id="priority" :value="filters.priority"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changePriority(($event.target as HTMLSelectElement).value)">
+                                <option value="all">All priorities</option>
+                                <option value="urgent">Urgent</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+
+                        <button type="button" class="text-xs font-semibold text-brand transition hover:underline"
+                            @click="resetFilters">
+                            Clear filters
+                        </button>
+                    </div>
+                </div>
+
+
+                <!-- Navigation -->
+                <div class="flex items-center gap-2">
+                    <button type="button" :disabled="currentPage <= 1"
+                        class="rounded-lg border border-border-subtle px-3 py-2 text-sm text-text-body transition hover:bg-bg-page disabled:cursor-not-allowed disabled:opacity-40"
+                        @click="goToPage(currentPage - 1)">
+                        Previous
+                    </button>
+
+                    <span class="px-2 text-sm text-text-muted">
+                        Page {{ currentPage }} of {{ totalPages }}
+                    </span>
+
+                    <button type="button" :disabled="currentPage >= totalPages"
+                        class="rounded-lg border border-border-subtle px-3 py-2 text-sm text-text-body transition hover:bg-bg-page disabled:cursor-not-allowed disabled:opacity-40"
+                        @click="goToPage(currentPage + 1)">
+                        Next
+                    </button>
+                </div>
+            </section>
 
             <RouterLink v-for="report in reportList" :key="report.uuid"
                 :to="{ name: 'issueDiscussion', params: { uuid: report.uuid } }"
@@ -590,45 +783,109 @@ onUnmounted(() => {
             </RouterLink>
 
             <!-- Pagination -->
-            <div v-if="totalReports > 0"
-                class="flex flex-col gap-4 rounded-2xl border border-border-subtle bg-bg-surface p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                <p class="text-sm text-text-muted">
-                    Showing
-                    <span class="font-semibold text-text-heading">
-                        {{ (currentPage - 1) * paginationPerPage + 1 }}–{{ Math.min(currentPage * paginationPerPage,
-                            totalReports) }}
-                    </span>
-                    of
-                    <span class="font-semibold text-text-heading">
-                        {{ totalReports }}
-                    </span>
-                    reports
-                </p>
+            <section v-if="!isPending && totalReports > 0"
+                class="flex flex-col justify-between gap-4 border-t border-border-subtle pt-5 sm:flex-row sm:items-center">
+                <!-- Results Information -->
 
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <!-- Pagination information and controls -->
+                    <div class="flex flex-wrap items-center gap-3 text-sm text-text-muted">
+                        <span>
+                            Showing
+                            <strong class="text-text-heading">
+                                {{ pagination?.from ?? 0 }}–{{ pagination?.to ?? 0 }}
+                            </strong>
+                            of
+                            <strong class="text-text-heading">
+                                {{ totalReports }}
+                            </strong>
+                            reports
+                        </span>
+
+                        <!-- Rows per page -->
+                        <div class="flex items-center gap-2">
+                            <label for="perPage" class="text-xs">Rows:</label>
+
+                            <select id="perPage" :value="perPage"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changePerPage(($event.target as HTMLSelectElement).value)">
+                                <option :value="5">5</option>
+                                <option :value="10">10</option>
+                                <option :value="20">20</option>
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                            </select>
+                        </div>
+
+                        <!-- Sort field -->
+                        <div class="flex items-center gap-2">
+                            <label for="sortBy" class="text-xs">Sort by:</label>
+
+                            <select id="sortBy" :value="filters.sort_by"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changeSorting(($event.target as HTMLSelectElement).value, filters.sort_direction)">
+                                <option value="created_at">Date created</option>
+                                <option value="updated_at">Last updated</option>
+                                <option value="title">Title</option>
+                                <option value="priority">Priority</option>
+                                <option value="status">Status</option>
+                            </select>
+                        </div>
+
+                        <!-- Sort direction -->
+                        <div class="flex items-center gap-2">
+                            <label for="sortDirection" class="text-xs">Order:</label>
+
+                            <select id="sortDirection" :value="filters.sort_direction"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changeSorting(filters.sort_by, ($event.target as HTMLSelectElement).value)">
+                                <option value="desc">Desc</option>
+                                <option value="asc">Asc</option>
+                            </select>
+                        </div>
+
+                        <!-- Priority filter -->
+                        <div class="flex items-center gap-2">
+                            <label for="priority" class="text-xs">Priority:</label>
+
+                            <select id="priority" :value="filters.priority"
+                                class="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-sm text-text-body outline-none focus:border-brand"
+                                @change="changePriority(($event.target as HTMLSelectElement).value)">
+                                <option value="all">All priorities</option>
+                                <option value="urgent">Urgent</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+
+                        <button type="button" class="text-xs font-semibold text-brand transition hover:underline"
+                            @click="resetFilters">
+                            Clear filters
+                        </button>
+                    </div>
+                </div>
+
+
+                <!-- Navigation -->
                 <div class="flex items-center gap-2">
-                    <button type="button" :disabled="currentPage === 1 || isPending"
-                        class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle px-3 py-2.5 text-sm font-medium text-text-body transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
-                        @click="changePage(currentPage - 1)">
-                        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="m15 18-6-6 6-6" />
-                        </svg>
-                        <span class="hidden sm:inline">Previous</span>
+                    <button type="button" :disabled="currentPage <= 1"
+                        class="rounded-lg border border-border-subtle px-3 py-2 text-sm text-text-body transition hover:bg-bg-page disabled:cursor-not-allowed disabled:opacity-40"
+                        @click="goToPage(currentPage - 1)">
+                        Previous
                     </button>
 
-                    <span class="rounded-xl bg-brand/10 px-4 py-2.5 text-sm font-bold text-brand">
-                        {{ currentPage }} / {{ lastPage }}
+                    <span class="px-2 text-sm text-text-muted">
+                        Page {{ currentPage }} of {{ totalPages }}
                     </span>
 
-                    <button type="button" :disabled="currentPage >= lastPage || isPending"
-                        class="inline-flex items-center gap-1.5 rounded-xl border border-border-subtle px-3 py-2.5 text-sm font-medium text-text-body transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
-                        @click="changePage(currentPage + 1)">
-                        <span class="hidden sm:inline">Next</span>
-                        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="m9 18 6-6-6-6" />
-                        </svg>
+                    <button type="button" :disabled="currentPage >= totalPages"
+                        class="rounded-lg border border-border-subtle px-3 py-2 text-sm text-text-body transition hover:bg-bg-page disabled:cursor-not-allowed disabled:opacity-40"
+                        @click="goToPage(currentPage + 1)">
+                        Next
                     </button>
                 </div>
-            </div>
+            </section>
         </div>
     </section>
 </template>

@@ -86,7 +86,7 @@ const menuOpen = ref(false)
                 </a>
 
                 <div class="mt-2 grid grid-cols-2 gap-3 border-t border-border-subtle pt-4">
-                    <RouterLink to="/signin"
+                    <RouterLink :to="{ name: 'login' }"
                         class="rounded-xl border border-border px-4 py-3 text-center text-sm font-semibold text-text-heading"
                         @click="menuOpen = false">
                         Sign In

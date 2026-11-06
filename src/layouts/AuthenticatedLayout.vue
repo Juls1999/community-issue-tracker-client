@@ -5,13 +5,20 @@ import { useAuthStore } from '@/stores/authStore'
 import AuthFooter from '@/components/layouts/authenticated/AuthFooter.vue'
 import AppBreadcrumb from '@/components/layouts/authenticated/AppBreadcrumb.vue'
 import ConfirmSignOutModal from '@/layouts/ConfirmSignOutModal.vue'
-import { useQueryClient } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { authService } from '@/services/authService'
+import type { User } from '@/types'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const isSidebarOpen = ref(false)
 
 const queryClient = useQueryClient()
+
+const { data: user } = useQuery<User>({
+    queryKey: ['auth', 'user'],
+    queryFn: () => authService.getAuthenticatedUser()
+})
 
 const navigation = [
     {
@@ -30,7 +37,7 @@ const navigation = [
 const showSignOutModal = ref(false)
 const signingOut = ref(false)
 
-async function confirmSignOut() {
+const confirmSignOut = async () => {
     if (signingOut.value) return
 
     signingOut.value = true
@@ -89,23 +96,23 @@ async function confirmSignOut() {
             </div>
 
             <!-- User information -->
-            <div class="mx-4 mt-6 rounded-xl bg-bg-page p-4">
+            <RouterLink :to="{ name: 'profile' }" class="mx-4 mt-6 rounded-xl bg-bg-page p-4">
                 <div class="flex items-center gap-3">
                     <div
                         class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand/15 font-semibold text-brand">
-                        {{ authStore.user?.name?.charAt(0)?.toUpperCase() || 'U' }}
+                        {{ user?.fullName?.charAt(0)?.toUpperCase() || 'U' }}
                     </div>
 
                     <div class="min-w-0">
                         <p class="truncate text-sm font-semibold text-text-heading">
-                            {{ authStore.user?.name || 'Resident' }}
+                            {{ user?.fullName || 'Resident' }}
                         </p>
                         <p class="truncate text-xs text-text-muted">
-                            {{ authStore.user?.email || '' }}
+                            {{ user?.email || '' }}
                         </p>
                     </div>
                 </div>
-            </div>
+            </RouterLink>
 
             <!-- Navigation -->
             <nav class="flex-1 space-y-2 px-4 py-6">

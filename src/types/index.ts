@@ -1,11 +1,23 @@
 export interface User {
   id: number
-  name: string
+  fullName: string
+  firstName: string
+  middleName: string
+  lastName: string
+  phoneNumber: string
   email: string
   role?: Role | null
   barangay?: Barangay | null
   createdAt: string
   updatedAt: string
+  isVerified: boolean
+}
+
+export interface UpdateUserParams {
+  firstName?: string
+  middleName?: string
+  lastName?: string
+  phoneNumber?: string
 }
 
 export interface Role {
@@ -14,7 +26,10 @@ export interface Role {
 }
 
 export interface RegisterParams {
-  name: string
+  firstName: string
+  middleName: string
+  lastName: string
+  phoneNumber: string
   email: string
   barangayId: string
   password: string
@@ -84,22 +99,22 @@ export interface IssueStatistics {
   rejected: number
 }
 
-export interface PaginatedIssues {
-  data: Issue[]
-  links: {
-    first: string | null
-    last: string | null
-    prev: string | null
-    next: string | null
-  }
-  meta: {
-    current_page: number
-    last_page: number
-    per_page: number
-    total: number
-  }
-  statistics: IssueStatistics
-}
+// export interface PaginatedIssues {
+//   data: Issue[]
+//   links: {
+//     first: string | null
+//     last: string | null
+//     prev: string | null
+//     next: string | null
+//   }
+//   meta: {
+//     current_page: number
+//     last_page: number
+//     per_page: number
+//     total: number
+//   }
+//   statistics: IssueStatistics
+// }
 
 export interface IssueComment {
   id: number
@@ -161,4 +176,34 @@ export interface IssuesResponse {
     resolved: number
     rejected: number
   }
+}
+
+export interface IssueListParams {
+  page: number
+  per_page: number
+  search: string
+  status: string
+  priority: string
+  category: string
+  sort_by: string
+  sort_direction: string
+}
+
+export interface PaginatedIssues {
+  data: Issue[]
+  links: {
+    first: string | null
+    last: string | null
+    prev: string | null
+    next: string | null
+  }
+  meta: {
+    current_page: number
+    from: number | null
+    last_page: number
+    per_page: number
+    to: number | null
+    total: number
+  }
+  statistics?: IssueStatistics
 }
