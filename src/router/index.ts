@@ -78,6 +78,15 @@ const router = createRouter({
           component: () => import('@/views/ProfileView.vue'),
           meta: { role: 'resident' },
         },
+        {
+          path: 'resident/notifications',
+          name: 'resident-notifications',
+          component: () => import('@/views/resident/NotificationsView.vue'),
+          meta: {
+            requiresAuth: true,
+            role: 'resident',
+          },
+        },
       ],
     },
   ],

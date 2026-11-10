@@ -32,4 +32,9 @@ export const queryKeys = {
   issueCategories: ['issue-categories'] as const,
 
   barangays: ['barangays'] as const,
+
+  notifications: {
+    all: ['notifications'] as const,
+    list: (page: number) => ['notifications', 'list', page] as const,
+  },
 }

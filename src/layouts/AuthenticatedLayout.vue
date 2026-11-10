@@ -8,6 +8,7 @@ import ConfirmSignOutModal from '@/layouts/ConfirmSignOutModal.vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { authService } from '@/services/authService'
 import type { User } from '@/types'
+import NotificationDropdown from '@/components/notifications/NotificationDropdown.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -116,9 +117,12 @@ const confirmSignOut = async () => {
 
             <!-- Navigation -->
             <nav class="flex-1 space-y-2 px-4 py-6">
-                <p class="mb-3 px-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
-                    Menu
-                </p>
+                <div class="flex justify-between">
+                    <p class=" p-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                        Menu
+                    </p>
+                    <NotificationDropdown />
+                </div>
 
                 <RouterLink v-for="item in navigation" :key="item.label" :to="item.to"
                     class="group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors"

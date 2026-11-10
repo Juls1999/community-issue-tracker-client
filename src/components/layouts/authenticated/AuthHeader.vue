@@ -73,12 +73,12 @@ const handleLogout = async () => {
           :aria-expanded="profileOpen" @click="profileOpen = !profileOpen">
           <div
             class="flex h-9 w-9 items-center justify-center rounded-full bg-brand/15 text-sm font-bold text-brand-dark">
-            {{ (authStore.user?.name || 'Resident').charAt(0).toUpperCase() }}
+            {{ (authStore.user?.fullName || 'Resident').charAt(0).toUpperCase() }}
           </div>
 
           <div class="max-w-36 text-left">
             <p class="truncate text-sm font-semibold text-text-heading">
-              {{ authStore.user?.name || 'Resident' }}
+              {{ authStore.user?.fullName || 'Resident' }}
             </p>
             <p class="text-xs text-text-muted">Resident account</p>
           </div>
@@ -93,7 +93,7 @@ const handleLogout = async () => {
           class="absolute right-0 top-full mt-2 w-56 rounded-2xl border border-border-subtle bg-bg-surface p-2 shadow-xl">
           <div class="border-b border-border-subtle px-3 py-3">
             <p class="truncate text-sm font-semibold text-text-heading">
-              {{ authStore.user?.name || 'Resident' }}
+              {{ authStore.user?.fullName || 'Resident' }}
             </p>
             <p class="truncate text-xs text-text-muted">
               {{ authStore.user?.email || '' }}
@@ -132,11 +132,11 @@ const handleLogout = async () => {
       <div class="mx-auto max-w-7xl space-y-2">
         <div class="mb-3 flex items-center gap-3 border-b border-border-subtle pb-4">
           <div class="flex h-10 w-10 items-center justify-center rounded-full bg-brand/15 font-bold text-brand-dark">
-            {{ (authStore.user?.name || 'Resident').charAt(0).toUpperCase() }}
+            {{ (authStore.user?.fullName || 'Resident').charAt(0).toUpperCase() }}
           </div>
           <div class="min-w-0">
             <p class="truncate text-sm font-semibold text-text-heading">
-              {{ authStore.user?.name || 'Resident' }}
+              {{ authStore.user?.fullName || 'Resident' }}
             </p>
             <p class="truncate text-xs text-text-muted">
               {{ authStore.user?.email || '' }}
