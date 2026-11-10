@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { issueService } from '@/services/issueService'
 import { useAuthStore } from '@/stores/authStore'
-import type { IssuePriority } from '@/types'
+import { type IssuePriority, type IssuesResponse } from '@/types'
 
 
 const authStore = useAuthStore()
@@ -46,6 +46,10 @@ const createIssueMutation = useMutation({
     }),
 
     onSuccess: async (issue) => {
+
+
+        queryClient.invalidateQueries({ queryKey: ['issues'] })
+
         await router.push({
             name: 'issueDiscussion',
             params: { uuid: issue.uuid },
@@ -72,7 +76,7 @@ const createIssueMutation = useMutation({
 // Handle form submission
 const handleSubmit = () => {
     errorMessage.value = ''
-    queryClient.invalidateQueries({ queryKey: ['issues'] })
+
     createIssueMutation.reset()
     createIssueMutation.mutate()
 }
