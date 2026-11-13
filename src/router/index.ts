@@ -83,8 +83,24 @@ const router = createRouter({
           name: 'resident-notifications',
           component: () => import('@/views/resident/NotificationsView.vue'),
           meta: {
-            requiresAuth: true,
             role: 'resident',
+          },
+        },
+        // STAFF ROUTES
+        {
+          path: 'staff/dashboard',
+          name: 'staffDashboard',
+          component: () => import('@/views/staff/StaffDashboardView.vue'),
+          meta: {
+            role: 'staff',
+          },
+        },
+        {
+          path: '/staff/issues',
+          name: 'staffIssues',
+          component: () => import('@/views/staff/StaffIssuesView.vue'),
+          meta: {
+            roles: 'staff',
           },
         },
       ],
@@ -124,7 +140,7 @@ function getDashboardRoute(role: string | null | undefined) {
       return { name: 'resident-dashboard' }
 
     case 'staff':
-      return { name: 'staff-dashboard' }
+      return { name: 'staffDashboard' }
 
     default:
       return { name: 'home' }

@@ -37,4 +37,8 @@ export const queryKeys = {
     all: ['notifications'] as const,
     list: (page: number) => ['notifications', 'list', page] as const,
   },
+
+  staffDashboard: {
+    all: ['staff-dashboard'] as const,
+  },
 }

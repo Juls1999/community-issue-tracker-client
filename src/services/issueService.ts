@@ -57,10 +57,10 @@ export const issueService = {
     await axios.patch<void>(`api/issues/${uuid}`, payload)
   },
 
-  async assignStaff(uuid: string, payload: AssignStaffPayload): Promise<User> {
-    const { data } = await axios.post(`/api/issues/${uuid}/assign`, payload)
-    return data
-  },
+  // async assignStaff(uuid: string, payload: AssignStaffPayload): Promise<User> {
+  //   const { data } = await axios.post(`/api/issues/${uuid}/assign`, payload)
+  //   return data
+  // },
 
   async updateIssueStatus(uuid: string, payload: UpdateStatusPayload): Promise<void> {
     await axios.patch(`/api/issues/${uuid}/status`, payload)
@@ -77,5 +77,22 @@ export const issueService = {
   async getBarangays(): Promise<Barangay[]> {
     const { data } = await axios.get<Barangay[]>('/api/barangays')
     return data
+  },
+
+  // async assignIssue(uuid: string): Promise<Issue> {
+  //   const { data } = await axios.patch<{ data: Issue }>(`/api/issues/${uuid}/assign`)
+
+  //   return data.data
+  // },
+
+  async claimIssue(uuid: string): Promise<Issue> {
+    const { data } = await axios.patch<{ data: Issue }>(`/api/issues/${uuid}/assign`)
+    return data.data
+  },
+
+  async assignIssue(uuid: string, staffId: number) {
+    return await axios.patch(`/api/issues/${uuid}/assign`, {
+      assigned_to: staffId,
+    })
   },
 }

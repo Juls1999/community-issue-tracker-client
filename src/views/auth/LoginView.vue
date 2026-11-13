@@ -16,6 +16,21 @@ const formData = reactive<LoginParams>({
 const showPassword = ref(false)
 const loginError = ref('')
 
+
+const getDashboardRoute = () => {
+    const role = authStore.user?.role?.name
+
+    const routes = {
+        resident: 'resident-dashboard',
+        staff: 'staffDashboard',
+        admin: 'admin-dashboard',
+    } as const
+
+    return {
+        name: routes[role as keyof typeof routes] ?? 'resident-dashboard',
+    }
+}
+
 const loginMutation = useMutation({
     mutationFn: (credentials: LoginParams) =>
         authStore.login(credentials),
@@ -30,7 +45,7 @@ const loginMutation = useMutation({
         await router.push(
             typeof redirect === 'string'
                 ? redirect
-                : { name: 'resident-dashboard' },
+                : getDashboardRoute(),
         )
     },
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AuthFooter from '@/components/layouts/authenticated/AuthFooter.vue'
@@ -21,19 +21,62 @@ const { data: user } = useQuery<User>({
     queryFn: () => authService.getAuthenticatedUser()
 })
 
-const navigation = [
-    {
-        label: 'Dashboard',
-        to: { name: 'resident-dashboard' },
-        icon: 'dashboard',
-    },
-    {
-        label: 'My Reports',
-        to: { name: 'resident-reports' },
-        icon: 'reports',
-    },
+const userRole = computed(() => user.value?.role?.name ?? 'resident')
 
-]
+const navigation = computed(() => {
+    if (userRole.value === 'staff') {
+        return [
+            {
+                label: 'Dashboard',
+                to: { name: 'staffDashboard' },
+                icon: 'dashboard',
+            },
+            {
+                label: 'Issue Management',
+                to: { name: 'staffIssues' },
+                icon: 'issues',
+            },
+        ]
+    }
+
+    if (userRole.value === 'admin') {
+        return [
+            {
+                label: 'Dashboard',
+                to: { name: 'admin-dashboard' },
+                icon: 'dashboard',
+            },
+            {
+                label: 'Issue Management',
+                to: { name: 'admin-issues' },
+                icon: 'issues',
+            },
+        ]
+    }
+
+    return [
+        {
+            label: 'Dashboard',
+            to: { name: 'resident-dashboard' },
+            icon: 'dashboard',
+        },
+        {
+            label: 'My Reports',
+            to: { name: 'resident-reports' },
+            icon: 'reports',
+        },
+    ]
+})
+
+const workspaceLabel = computed(() => {
+    const labels: Record<string, string> = {
+        resident: 'Resident workspace',
+        staff: 'Staff workspace',
+        admin: 'Admin workspace',
+    }
+
+    return labels[userRole.value] ?? 'Workspace'
+})
 
 const showSignOutModal = ref(false)
 const signingOut = ref(false)
@@ -84,7 +127,9 @@ const confirmSignOut = async () => {
                         <p class="text-base font-bold text-text-heading">
                             Community Portal
                         </p>
-                        <p class="text-xs text-text-muted">Resident workspace</p>
+                        <p class="text-xs text-text-muted">
+                            {{ workspaceLabel }}
+                        </p>
                     </div>
                 </RouterLink>
 
@@ -145,12 +190,22 @@ const confirmSignOut = async () => {
                         <path d="M14 2v6h6M8 13h8M8 17h8" />
                     </svg>
 
+                    <!-- Issue Management icon -->
+                    <svg v-else-if="item.icon === 'issues'" viewBox="0 0 24 24" class="h-5 w-5 shrink-0" fill="none"
+                        stroke="currentColor" stroke-width="1.8">
+                        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+                        <rect x="9" y="3" width="6" height="4" rx="1" />
+                        <path d="M9 12h6M9 16h6" />
+                    </svg>
+
                     <!-- Create issue icon -->
                     <svg v-else viewBox="0 0 24 24" class="h-5 w-5 shrink-0" fill="none" stroke="currentColor"
                         stroke-width="1.8">
                         <circle cx="12" cy="12" r="9" />
                         <path d="M12 8v8M8 12h8" />
                     </svg>
+
+
 
                     {{ item.label }}
                 </RouterLink>

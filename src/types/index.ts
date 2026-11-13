@@ -182,9 +182,9 @@ export interface IssueListParams {
   page: number
   per_page: number
   search: string
-  status: string
-  priority: string
-  category: string
+  status: string | undefined
+  priority: string | undefined
+  category: string | undefined
   sort_by: string
   sort_direction: string
 }
