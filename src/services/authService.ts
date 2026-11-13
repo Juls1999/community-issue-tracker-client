@@ -8,6 +8,7 @@ export const authService = {
   },
 
   async registerUser(credentials: RegisterParams): Promise<void> {
+    await axios.get('/sanctum/csrf-cookie')
     await axios.post<void>('/register', {
       first_name: credentials.firstName,
       middle_name: credentials.middleName,
@@ -21,6 +22,7 @@ export const authService = {
   },
 
   async loginUser(credentials: LoginParams): Promise<void> {
+    await axios.get('/sanctum/csrf-cookie')
     await axios.post<void>('/login', credentials)
   },
 
